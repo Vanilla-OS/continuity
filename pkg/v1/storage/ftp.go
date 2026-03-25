@@ -274,6 +274,11 @@ func (b *FTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 			return b.MkdirAll(remotePath, 0755)
 		}
 
+		// Skip non-regular files: sockets, devices, named pipes, symlinks.
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+
 		if err := b.MkdirAll(filepath.Dir(remotePath), 0755); err != nil {
 			return err
 		}
@@ -283,10 +288,6 @@ func (b *FTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 			return err
 		}
 		defer f.Close()
-
-		if fi, err := f.Stat(); err == nil && fi.IsDir() {
-			return b.MkdirAll(remotePath, 0755)
-		}
 
 		return b.conn.Stor(remotePath, f)
 	})

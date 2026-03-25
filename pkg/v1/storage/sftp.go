@@ -233,6 +233,11 @@ func (b *SFTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 			return b.client.MkdirAll(remotePath)
 		}
 
+		// Skip non-regular files: sockets, devices, named pipes, symlinks.
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+
 		if err := b.client.MkdirAll(filepath.Dir(remotePath)); err != nil {
 			return err
 		}
@@ -242,10 +247,6 @@ func (b *SFTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 			return err
 		}
 		defer src.Close()
-
-		if fi, err := src.Stat(); err == nil && fi.IsDir() {
-			return b.client.MkdirAll(remotePath)
-		}
 
 		dst, err := b.client.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
 		if err != nil {
