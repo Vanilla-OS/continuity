@@ -252,12 +252,19 @@ func (b *FTPBackend) Rename(oldPath, newPath string) error {
 
 // CopyFromNative uploads nativeSrc (local path) directly to backendDst (remote path).
 func (b *FTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
-	return filepath.Walk(nativeSrc, func(localPath string, info os.FileInfo, err error) error {
+	// Resolve symlinks on the root so filepath.Walk can descend into it.
+	// (filepath.Walk does not follow symlinks, including the root itself.)
+	resolvedSrc, err := filepath.EvalSymlinks(nativeSrc)
+	if err != nil {
+		return fmt.Errorf("failed to resolve path %s: %w", nativeSrc, err)
+	}
+
+	return filepath.Walk(resolvedSrc, func(localPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		relPath, err := filepath.Rel(nativeSrc, localPath)
+		relPath, err := filepath.Rel(resolvedSrc, localPath)
 		if err != nil {
 			return err
 		}
@@ -277,8 +284,6 @@ func (b *FTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 		}
 		defer f.Close()
 
-		// filepath.Walk uses Lstat, so symlinks to dirs pass the IsDir check above.
-		// Re-stat the opened file to catch that case and create the dir instead.
 		if fi, err := f.Stat(); err == nil && fi.IsDir() {
 			return b.MkdirAll(remotePath, 0755)
 		}
