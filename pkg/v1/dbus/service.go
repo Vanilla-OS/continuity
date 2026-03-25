@@ -16,6 +16,7 @@ import (
 	"github.com/vanilla-os/continuity/pkg/v1/continuity"
 	"github.com/vanilla-os/continuity/pkg/v1/repo"
 	"github.com/vanilla-os/continuity/pkg/v1/restore"
+	"github.com/vanilla-os/continuity/pkg/v1/storage"
 	"github.com/vanilla-os/sdk/pkg/v1/app"
 )
 
@@ -86,16 +87,34 @@ func (s *Service) Start() error {
 	return nil
 }
 
+// newBackend creates and connects a storage backend for the current config.
+func (s *Service) newBackend() (storage.Backend, error) {
+	backend, err := storage.NewBackend(s.Core.Config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create storage backend: %w", err)
+	}
+	if err := backend.Connect(); err != nil {
+		return nil, fmt.Errorf("failed to connect storage backend: %w", err)
+	}
+	return backend, nil
+}
+
 // CreateBackup creates a new backup (DBus method)
 func (s *Service) CreateBackup(label string) (string, *dbus.Error) {
 	s.App.Log.Term.Info().Msgf("DBus: CreateBackup called with label=%s", label)
 
-	repoMgr, err := repo.NewManager(s.App, s.Core.Config)
+	backend, err := s.newBackend()
+	if err != nil {
+		return "", dbus.MakeFailedError(fmt.Errorf("failed to init backend: %w", err))
+	}
+	defer backend.Close()
+
+	repoMgr, err := repo.NewManager(s.App, s.Core.Config, backend)
 	if err != nil {
 		return "", dbus.MakeFailedError(fmt.Errorf("failed to init repo: %w", err))
 	}
 
-	backupMgr := backup.NewManager(s.App, repoMgr, s.Core.Config.ExcludePatterns, s.Core.Config.EnabledProviders, false)
+	backupMgr := backup.NewManager(s.App, repoMgr, s.Core.Config.ExcludePatterns, s.Core.Config.EnabledProviders, backend, false)
 	snapshotID, err := backupMgr.RunBackup(label)
 	if err != nil {
 		return "", dbus.MakeFailedError(fmt.Errorf("backup failed: %w", err))
@@ -108,7 +127,13 @@ func (s *Service) CreateBackup(label string) (string, *dbus.Error) {
 func (s *Service) ListBackups() ([]string, *dbus.Error) {
 	s.App.Log.Term.Info().Msg("DBus: ListBackups called")
 
-	repoMgr, err := repo.NewManager(s.App, s.Core.Config)
+	backend, err := s.newBackend()
+	if err != nil {
+		return nil, dbus.MakeFailedError(fmt.Errorf("failed to init backend: %w", err))
+	}
+	defer backend.Close()
+
+	repoMgr, err := repo.NewManager(s.App, s.Core.Config, backend)
 	if err != nil {
 		return nil, dbus.MakeFailedError(fmt.Errorf("failed to init repo: %w", err))
 	}
@@ -130,12 +155,18 @@ func (s *Service) ListBackups() ([]string, *dbus.Error) {
 func (s *Service) RestoreBackup(snapshotID string) (bool, *dbus.Error) {
 	s.App.Log.Term.Info().Msgf("DBus: RestoreBackup called with snapshot=%s", snapshotID)
 
-	repoMgr, err := repo.NewManager(s.App, s.Core.Config)
+	backend, err := s.newBackend()
+	if err != nil {
+		return false, dbus.MakeFailedError(fmt.Errorf("failed to init backend: %w", err))
+	}
+	defer backend.Close()
+
+	repoMgr, err := repo.NewManager(s.App, s.Core.Config, backend)
 	if err != nil {
 		return false, dbus.MakeFailedError(fmt.Errorf("failed to init repo: %w", err))
 	}
 
-	restoreMgr := restore.NewManager(s.App, repoMgr, s.Core.Config.EnabledProviders, false)
+	restoreMgr := restore.NewManager(s.App, repoMgr, backend, s.Core.Config.EnabledProviders, false)
 	if err := restoreMgr.RunRestore(snapshotID); err != nil {
 		return false, dbus.MakeFailedError(fmt.Errorf("restore failed: %w", err))
 	}

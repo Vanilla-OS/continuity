@@ -14,6 +14,7 @@ import (
 	"github.com/vanilla-os/continuity/pkg/v1/continuity"
 	"github.com/vanilla-os/continuity/pkg/v1/repo"
 	"github.com/vanilla-os/continuity/pkg/v1/restore"
+	"github.com/vanilla-os/continuity/pkg/v1/storage"
 	"github.com/vanilla-os/sdk/pkg/v1/app"
 	"github.com/vanilla-os/sdk/pkg/v1/cli"
 )
@@ -41,6 +42,19 @@ func NewRootCmd(application *app.App, core *continuity.Core) *RootCmd {
 	return &RootCmd{}
 }
 
+// newBackend creates, connects and returns the configured storage backend.
+// The caller is responsible for calling backend.Close().
+func newBackend() (storage.Backend, error) {
+	backend, err := storage.NewBackend(globalCore.Config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create storage backend: %w", err)
+	}
+	if err := backend.Connect(); err != nil {
+		return nil, fmt.Errorf("failed to connect storage backend: %w", err)
+	}
+	return backend, nil
+}
+
 // VersionCmd shows version information
 type VersionCmd struct {
 	cli.Base
@@ -64,7 +78,7 @@ func (c *StatusCmd) Run() error {
 		dedup = "yes"
 	}
 
-	fmt.Println("\nContinuity Status\n")
+	fmt.Println("\nContinuity Status")
 	return globalApp.CLI.Table(
 		[]string{"Setting", "Value"},
 		[][]string{
@@ -85,12 +99,18 @@ type BackupCmd struct {
 
 // Run executes the backup command
 func (c *BackupCmd) Run() error {
-	repoMgr, err := repo.NewManager(globalApp, globalCore.Config)
+	backend, err := newBackend()
+	if err != nil {
+		return err
+	}
+	defer backend.Close()
+
+	repoMgr, err := repo.NewManager(globalApp, globalCore.Config, backend)
 	if err != nil {
 		return fmt.Errorf("failed to initialize repository: %w", err)
 	}
 
-	backupMgr := backup.NewManager(globalApp, repoMgr, globalCore.Config.ExcludePatterns, globalCore.Config.EnabledProviders, c.DryRun)
+	backupMgr := backup.NewManager(globalApp, repoMgr, globalCore.Config.ExcludePatterns, globalCore.Config.EnabledProviders, backend, c.DryRun)
 	snapshotID, err := backupMgr.RunBackup(c.Label)
 	if err != nil {
 		return fmt.Errorf("backup failed: %w", err)
@@ -112,12 +132,18 @@ type ListCmd struct {
 
 // Run executes the list command
 func (c *ListCmd) Run() error {
-	repoMgr, err := repo.NewManager(globalApp, globalCore.Config)
+	backend, err := newBackend()
+	if err != nil {
+		return err
+	}
+	defer backend.Close()
+
+	repoMgr, err := repo.NewManager(globalApp, globalCore.Config, backend)
 	if err != nil {
 		return fmt.Errorf("failed to initialize repository: %w", err)
 	}
 
-	backupMgr := backup.NewManager(globalApp, repoMgr, globalCore.Config.ExcludePatterns, globalCore.Config.EnabledProviders, false)
+	backupMgr := backup.NewManager(globalApp, repoMgr, globalCore.Config.ExcludePatterns, globalCore.Config.EnabledProviders, backend, false)
 	if err := backupMgr.ListBackups(c.Details); err != nil {
 		return fmt.Errorf("failed to list backups: %w", err)
 	}
@@ -134,12 +160,18 @@ type RestoreCmd struct {
 
 // Run executes the restore command
 func (c *RestoreCmd) Run() error {
-	repoMgr, err := repo.NewManager(globalApp, globalCore.Config)
+	backend, err := newBackend()
+	if err != nil {
+		return err
+	}
+	defer backend.Close()
+
+	repoMgr, err := repo.NewManager(globalApp, globalCore.Config, backend)
 	if err != nil {
 		return fmt.Errorf("failed to initialize repository: %w", err)
 	}
 
-	restoreMgr := restore.NewManager(globalApp, repoMgr, globalCore.Config.EnabledProviders, c.DryRun)
+	restoreMgr := restore.NewManager(globalApp, repoMgr, backend, globalCore.Config.EnabledProviders, c.DryRun)
 	if err := restoreMgr.RunRestore(c.SnapshotID); err != nil {
 		return fmt.Errorf("restore failed: %w", err)
 	}
@@ -161,7 +193,13 @@ type PruneCmd struct {
 
 // Run executes the prune command
 func (c *PruneCmd) Run() error {
-	repoMgr, err := repo.NewManager(globalApp, globalCore.Config)
+	backend, err := newBackend()
+	if err != nil {
+		return err
+	}
+	defer backend.Close()
+
+	repoMgr, err := repo.NewManager(globalApp, globalCore.Config, backend)
 	if err != nil {
 		return fmt.Errorf("failed to initialize repository: %w", err)
 	}
@@ -201,12 +239,18 @@ type InspectCmd struct {
 
 // Run executes the inspect command
 func (c *InspectCmd) Run() error {
-	repoMgr, err := repo.NewManager(globalApp, globalCore.Config)
+	backend, err := newBackend()
+	if err != nil {
+		return err
+	}
+	defer backend.Close()
+
+	repoMgr, err := repo.NewManager(globalApp, globalCore.Config, backend)
 	if err != nil {
 		return fmt.Errorf("failed to initialize repository: %w", err)
 	}
 
-	backupMgr := backup.NewManager(globalApp, repoMgr, globalCore.Config.ExcludePatterns, globalCore.Config.EnabledProviders, false)
+	backupMgr := backup.NewManager(globalApp, repoMgr, globalCore.Config.ExcludePatterns, globalCore.Config.EnabledProviders, backend, false)
 	if err := backupMgr.InspectBackup(c.SnapshotID); err != nil {
 		return fmt.Errorf("failed to inspect backup: %w", err)
 	}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/vanilla-os/continuity/pkg/v1/providers"
 	"github.com/vanilla-os/continuity/pkg/v1/repo"
+	"github.com/vanilla-os/continuity/pkg/v1/storage"
 	"github.com/vanilla-os/sdk/pkg/v1/app"
 )
 
@@ -22,12 +23,13 @@ import (
 type Manager struct {
 	App       *app.App
 	RepoMgr   *repo.Manager
+	Backend   storage.Backend
 	Providers map[string]providers.BackupProvider
 	DryRun    bool
 }
 
 // NewManager creates a new restore manager
-func NewManager(app *app.App, repoMgr *repo.Manager, enabledProviders []string, dryRun bool) *Manager {
+func NewManager(app *app.App, repoMgr *repo.Manager, backend storage.Backend, enabledProviders []string, dryRun bool) *Manager {
 	allProviders := map[string]providers.BackupProvider{
 		"userdata": providers.NewUserDataProvider(nil),
 		"flatpak":  providers.NewFlatpakProvider(),
@@ -36,13 +38,13 @@ func NewManager(app *app.App, repoMgr *repo.Manager, enabledProviders []string, 
 
 	activeProviders := make(map[string]providers.BackupProvider)
 	for _, name := range enabledProviders {
-		// Map config names to provider keys
 		providerKey := name
-		if name == "userdata" {
+		switch name {
+		case "userdata":
 			providerKey = "UserData"
-		} else if name == "flatpak" {
+		case "flatpak":
 			providerKey = "Flatpak"
-		} else if name == "abroot" {
+		case "abroot":
 			providerKey = "ABRoot"
 		}
 
@@ -54,6 +56,7 @@ func NewManager(app *app.App, repoMgr *repo.Manager, enabledProviders []string, 
 	return &Manager{
 		App:       app,
 		RepoMgr:   repoMgr,
+		Backend:   backend,
 		DryRun:    dryRun,
 		Providers: activeProviders,
 	}
@@ -66,6 +69,14 @@ func (m *Manager) RunRestore(snapshotID string) error {
 	}
 	m.App.Log.Term.Info().Msgf("===== STARTING RESTORE FROM %s =====", snapshotID)
 
+	if m.Backend.IsLocal() {
+		return m.runLocalRestore(snapshotID)
+	}
+	return m.runRemoteRestore(snapshotID)
+}
+
+// runLocalRestore extracts the snapshot to a local staging dir, then restores per-provider.
+func (m *Manager) runLocalRestore(snapshotID string) error {
 	stagingDir, err := os.MkdirTemp("", "continuity-restore-*")
 	if err != nil {
 		return fmt.Errorf("failed to create staging directory: %w", err)
@@ -80,11 +91,22 @@ func (m *Manager) RunRestore(snapshotID string) error {
 		}
 	}
 
-	abrootRestored := false
-	for name, provider := range m.Providers {
-		providerPath := filepath.Join(stagingDir, name)
+	return m.restoreProviders(snapshotID, stagingDir, true)
+}
 
-		if !m.DryRun {
+// runRemoteRestore reads providers directly from the remote backend.
+func (m *Manager) runRemoteRestore(snapshotID string) error {
+	treePath := filepath.Join(m.Backend.BasePath(), "snapshots", snapshotID, "tree")
+	return m.restoreProviders(snapshotID, treePath, false)
+}
+
+func (m *Manager) restoreProviders(snapshotID, basePath string, isStaging bool) error {
+	abrootRestored := false
+
+	for name, provider := range m.Providers {
+		providerPath := filepath.Join(basePath, name)
+
+		if !m.DryRun && isStaging {
 			if _, err := os.Stat(providerPath); os.IsNotExist(err) {
 				m.App.Log.Term.Warn().Msgf("Provider %s data not found in backup, skipping", name)
 				continue
@@ -101,7 +123,7 @@ func (m *Manager) RunRestore(snapshotID string) error {
 			continue
 		}
 
-		if err := provider.Restore(m.App, stagingDir); err != nil {
+		if err := provider.Restore(m.App, m.Backend, providerPath); err != nil {
 			m.App.Log.Term.Error().Msgf("Provider %s restore failed: %v", name, err)
 			continue
 		}
@@ -113,7 +135,6 @@ func (m *Manager) RunRestore(snapshotID string) error {
 		m.App.Log.Term.Info().Msgf("Provider %s restore completed", name)
 	}
 
-	// Trigger ABRoot package sync if metadata was restored
 	if abrootRestored {
 		if m.DryRun {
 			m.App.Log.Term.Info().Msg("[DRY-RUN] Would run: abroot pkg sync")
@@ -129,7 +150,7 @@ func (m *Manager) RunRestore(snapshotID string) error {
 	}
 
 	if m.DryRun {
-		m.App.Log.Term.Info().Msg("===== DRY-RUN COMPLETE (NO CHANGES MADE) =====")
+		m.App.Log.Term.Info().Msgf("===== DRY-RUN COMPLETE (NO CHANGES MADE) =====")
 	} else {
 		m.App.Log.Term.Info().Msg("===== RESTORE COMPLETE =====")
 	}

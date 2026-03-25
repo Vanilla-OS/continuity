@@ -9,11 +9,10 @@ Description: ABRoot provider backs up ABRoot metadata.
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
+	"github.com/vanilla-os/continuity/pkg/v1/storage"
 	"github.com/vanilla-os/sdk/pkg/v1/app"
-	"github.com/vanilla-os/sdk/pkg/v1/fs"
 )
 
 // ABRootProvider backs up ABRoot metadata
@@ -29,62 +28,33 @@ func (p *ABRootProvider) Name() string {
 	return "ABRoot"
 }
 
-// Backup backs up ABRoot metadata from /etc/abroot
-func (p *ABRootProvider) Backup(app *app.App) (string, error) {
+// Backup copies /etc/abroot directly to destPath on the backend without local staging.
+func (p *ABRootProvider) Backup(app *app.App, backend storage.Backend, destPath string) error {
 	app.Log.Term.Info().Msg("Starting ABRoot metadata backup...")
 
-	tmpDir, err := os.MkdirTemp("", "continuity-abroot-*")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp directory: %w", err)
-	}
-
 	abrootSource := "/etc/abroot"
-	abrootDest := filepath.Join(tmpDir, "abroot")
-
-	if _, err := os.Stat(abrootSource); os.IsNotExist(err) {
-		os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("ABRoot metadata not found at %s", abrootSource)
-	}
+	abrootDest := filepath.Join(destPath, "abroot")
 
 	app.Log.Term.Info().Msgf("Copying %s to %s", abrootSource, abrootDest)
 
-	copyOpts := fs.CopyTreeOptions{
-		Workers:             1,
-		PreserveOwnership:   true,
-		PreserveTimestamps:  true,
-		PreservePermissions: true,
+	if err := backend.CopyFromNative(abrootSource, abrootDest); err != nil {
+		return fmt.Errorf("failed to copy ABRoot metadata: %w", err)
 	}
 
-	if err := fs.CopyTree(abrootSource, abrootDest, copyOpts); err != nil {
-		os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("failed to copy ABRoot metadata: %w", err)
-	}
-
-	app.Log.Term.Info().Msgf("ABRoot metadata backup staged at %s", tmpDir)
-	return tmpDir, nil
+	app.Log.Term.Info().Msg("ABRoot metadata backup completed")
+	return nil
 }
 
-// Restore restores ABRoot metadata to /etc/abroot
-func (p *ABRootProvider) Restore(app *app.App, sourcePath string) error {
+// Restore restores ABRoot metadata to /etc/abroot.
+func (p *ABRootProvider) Restore(app *app.App, backend storage.Backend, sourcePath string) error {
 	app.Log.Term.Info().Msg("Starting ABRoot metadata restore...")
 
 	abrootSrc := filepath.Join(sourcePath, "abroot")
 	abrootDst := "/etc/abroot"
 
-	if _, err := os.Stat(abrootSrc); os.IsNotExist(err) {
-		return fmt.Errorf("backup does not contain ABRoot metadata")
-	}
-
 	app.Log.Term.Info().Msgf("Restoring %s to %s", abrootSrc, abrootDst)
 
-	copyOpts := fs.CopyTreeOptions{
-		Workers:             1,
-		PreserveOwnership:   true,
-		PreserveTimestamps:  true,
-		PreservePermissions: true,
-	}
-
-	if err := fs.CopyTree(abrootSrc, abrootDst, copyOpts); err != nil {
+	if err := backend.CopyToNative(abrootSrc, abrootDst); err != nil {
 		return fmt.Errorf("failed to restore ABRoot metadata: %w", err)
 	}
 

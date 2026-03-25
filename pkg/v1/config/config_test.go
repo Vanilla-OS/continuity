@@ -60,6 +60,12 @@ func TestLoad(t *testing.T) {
 }
 
 func TestLoadFallbackToDefault(t *testing.T) {
+	// Point XDG_CONFIG_HOME to an empty dir so no real config file is found,
+	// ensuring Load() falls back to defaults regardless of the user's environment.
+	emptyDir := t.TempDir()
+	os.Setenv("XDG_CONFIG_HOME", emptyDir)
+	defer os.Unsetenv("XDG_CONFIG_HOME")
+
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load should not fail: %v", err)

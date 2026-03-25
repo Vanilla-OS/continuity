@@ -9,11 +9,10 @@ Description: UserData provider backs up user home directories.
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
+	"github.com/vanilla-os/continuity/pkg/v1/storage"
 	"github.com/vanilla-os/sdk/pkg/v1/app"
-	"github.com/vanilla-os/sdk/pkg/v1/fs"
 )
 
 // UserDataProvider backs up user home directories
@@ -33,57 +32,33 @@ func (p *UserDataProvider) Name() string {
 	return "UserData"
 }
 
-// Backup backs up all user home directories to a temporary location
-func (p *UserDataProvider) Backup(app *app.App) (string, error) {
+// Backup copies /home directly to destPath on the backend without local staging.
+func (p *UserDataProvider) Backup(app *app.App, backend storage.Backend, destPath string) error {
 	app.Log.Term.Info().Msg("Starting UserData backup...")
 
-	tmpDir, err := os.MkdirTemp("", "continuity-userdata-*")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp directory: %w", err)
-	}
-
 	homeSource := "/home"
-	homeDest := filepath.Join(tmpDir, "home")
+	homeDest := filepath.Join(destPath, "home")
 
 	app.Log.Term.Info().Msgf("Copying %s to %s", homeSource, homeDest)
 
-	copyOpts := fs.CopyTreeOptions{
-		Workers:             2,
-		PreserveOwnership:   true,
-		PreserveTimestamps:  true,
-		PreservePermissions: true,
+	if err := backend.CopyFromNative(homeSource, homeDest); err != nil {
+		return fmt.Errorf("failed to copy %s: %w", homeSource, err)
 	}
 
-	if err := fs.CopyTree(homeSource, homeDest, copyOpts); err != nil {
-		os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("failed to copy %s: %w", homeSource, err)
-	}
-
-	app.Log.Term.Info().Msgf("UserData backup staged at %s", tmpDir)
-	return tmpDir, nil
+	app.Log.Term.Info().Msg("UserData backup completed")
+	return nil
 }
 
-// Restore restores user home directories from backup
-func (p *UserDataProvider) Restore(app *app.App, sourcePath string) error {
+// Restore restores user home directories from backup.
+func (p *UserDataProvider) Restore(app *app.App, backend storage.Backend, sourcePath string) error {
 	app.Log.Term.Info().Msg("Starting UserData restore...")
 
 	homeSrc := filepath.Join(sourcePath, "home")
 	homeDst := "/home"
 
-	if _, err := os.Stat(homeSrc); os.IsNotExist(err) {
-		return fmt.Errorf("backup does not contain home directory")
-	}
-
 	app.Log.Term.Info().Msgf("Restoring %s to %s", homeSrc, homeDst)
 
-	copyOpts := fs.CopyTreeOptions{
-		Workers:             2,
-		PreserveOwnership:   true,
-		PreserveTimestamps:  true,
-		PreservePermissions: true,
-	}
-
-	if err := fs.CopyTree(homeSrc, homeDst, copyOpts); err != nil {
+	if err := backend.CopyToNative(homeSrc, homeDst); err != nil {
 		return fmt.Errorf("failed to restore home directory: %w", err)
 	}
 

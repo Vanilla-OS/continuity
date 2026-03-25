@@ -10,11 +10,11 @@ Description: Flatpak provider backs up installed Flatpak applications.
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/vanilla-os/continuity/pkg/v1/storage"
 	"github.com/vanilla-os/sdk/pkg/v1/app"
 )
 
@@ -39,25 +39,16 @@ func (p *FlatpakProvider) Name() string {
 	return "Flatpak"
 }
 
-// Backup lists installed Flatpak apps and saves to JSON
-func (p *FlatpakProvider) Backup(app *app.App) (string, error) {
+// Backup lists installed Flatpak apps and writes JSON directly to the backend.
+func (p *FlatpakProvider) Backup(app *app.App, backend storage.Backend, destPath string) error {
 	app.Log.Term.Info().Msg("Starting Flatpak backup...")
 
-	// Create temporary directory
-	tmpDir, err := os.MkdirTemp("", "continuity-flatpak-*")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp directory: %w", err)
-	}
-
-	// List installed Flatpaks
 	cmd := exec.Command("flatpak", "list", "--app", "--columns=name,application,origin,branch")
 	output, err := cmd.Output()
 	if err != nil {
-		os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("failed to list flatpaks: %w", err)
+		return fmt.Errorf("failed to list flatpaks: %w", err)
 	}
 
-	// Parse output
 	var apps []FlatpakApp
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
@@ -76,29 +67,26 @@ func (p *FlatpakProvider) Backup(app *app.App) (string, error) {
 		})
 	}
 
-	// Save to JSON
-	listPath := filepath.Join(tmpDir, "flatpak-apps.json")
 	data, err := json.MarshalIndent(apps, "", "  ")
 	if err != nil {
-		os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("failed to marshal flatpak list: %w", err)
+		return fmt.Errorf("failed to marshal flatpak list: %w", err)
 	}
 
-	if err := os.WriteFile(listPath, data, 0644); err != nil {
-		os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("failed to write flatpak list: %w", err)
+	listPath := filepath.Join(destPath, "flatpak-apps.json")
+	if err := backend.WriteFile(listPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write flatpak list: %w", err)
 	}
 
-	app.Log.Term.Info().Msgf("Flatpak backup staged: %d apps", len(apps))
-	return tmpDir, nil
+	app.Log.Term.Info().Msgf("Flatpak backup completed: %d apps", len(apps))
+	return nil
 }
 
-// Restore reinstalls Flatpak apps from backup
-func (p *FlatpakProvider) Restore(app *app.App, sourcePath string) error {
+// Restore reinstalls Flatpak apps from backup.
+func (p *FlatpakProvider) Restore(app *app.App, backend storage.Backend, sourcePath string) error {
 	app.Log.Term.Info().Msg("Starting Flatpak restore...")
 
 	listPath := filepath.Join(sourcePath, "flatpak-apps.json")
-	data, err := os.ReadFile(listPath)
+	data, err := backend.ReadFile(listPath)
 	if err != nil {
 		return fmt.Errorf("failed to read flatpak list: %w", err)
 	}
