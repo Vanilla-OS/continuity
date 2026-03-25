@@ -2,8 +2,6 @@ module github.com/vanilla-os/continuity
 
 go 1.25.7
 
-replace github.com/vanilla-os/sdk => ./sdk
-
 require (
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/vanilla-os/sdk v0.0.0-20260302123445-43c07dcc578b
