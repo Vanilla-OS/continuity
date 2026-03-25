@@ -110,6 +110,10 @@ continuity inspect 20260325T094705Z-68b19f6b
 - Source path
 - Providers included (UserData, Flatpak, ABRoot)
 - Deduplication status
+- **Provider content details**:
+  - **Flatpak**: List of backed up applications with app IDs
+  - **ABRoot**: Files from /etc/abroot with sizes
+  - **UserData**: User directories with total sizes
 
 #### `continuity restore <snapshot-id>`
 Restore from a backup snapshot.

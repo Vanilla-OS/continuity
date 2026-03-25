@@ -188,6 +188,23 @@ func (m *Manager) InspectBackup(snapshotID string) error {
 		for _, provider := range providers {
 			m.App.Log.Term.Info().Msgf("  - %s", provider)
 		}
+
+		// Show provider content
+		m.App.Log.Term.Info().Msg("\nProvider content:")
+		for _, provider := range providers {
+			content, err := m.RepoMgr.GetProviderContent(target.ID, provider)
+			if err != nil {
+				m.App.Log.Term.Warn().Msgf("  %s: Could not read content: %v", provider, err)
+				continue
+			}
+
+			if len(content) > 0 {
+				m.App.Log.Term.Info().Msgf("\n  %s:", provider)
+				for _, line := range content {
+					m.App.Log.Term.Info().Msgf("    %s", line)
+				}
+			}
+		}
 	} else {
 		m.App.Log.Term.Warn().Msgf("  Could not determine providers: %v", err)
 	}

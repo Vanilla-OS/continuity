@@ -146,6 +146,10 @@ The `inspect` command shows:
 - Total size (deduplicated)
 - Providers included (UserData, Flatpak, ABRoot)
 - Source path and deduplication status
+- **Provider content**:
+  - **Flatpak**: List of installed apps with IDs
+  - **ABRoot**: Files backed up from /etc/abroot
+  - **UserData**: User home directories with sizes
 
 ### LUKS encryption
 

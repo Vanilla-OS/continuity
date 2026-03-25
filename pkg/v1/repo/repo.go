@@ -8,6 +8,7 @@ Description: Repository manager wrapper around SDK backup primitives.
 */
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -142,6 +143,68 @@ func (m *Manager) GetSnapshotProviders(snapshotID string) ([]string, error) {
 	return providers, nil
 }
 
+// GetProviderContent returns human-readable content summary for a provider
+func (m *Manager) GetProviderContent(snapshotID, providerName string) ([]string, error) {
+	snapshotPath := fmt.Sprintf("%s/snapshots/%s/tree", m.Config.RepositoryPath, snapshotID)
+	providerPath := fmt.Sprintf("%s/%s", snapshotPath, providerName)
+
+	var content []string
+
+	switch providerName {
+	case "Flatpak":
+		// Read flatpak.json
+		jsonPath := fmt.Sprintf("%s/flatpak.json", providerPath)
+		data, err := os.ReadFile(jsonPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read flatpak.json: %w", err)
+		}
+
+		var apps []map[string]interface{}
+		if err := json.Unmarshal(data, &apps); err != nil {
+			return nil, fmt.Errorf("failed to parse flatpak.json: %w", err)
+		}
+
+		for _, app := range apps {
+			name := app["name"]
+			appID := app["application"]
+			content = append(content, fmt.Sprintf("%s (%s)", name, appID))
+		}
+
+	case "ABRoot":
+		// List files in abroot directory
+		err := filepath.Walk(providerPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() {
+				relPath, _ := filepath.Rel(providerPath, path)
+				content = append(content, fmt.Sprintf("%s (%s)", relPath, formatBytes(info.Size())))
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to walk ABRoot directory: %w", err)
+		}
+
+	case "UserData":
+		// List top-level directories (user homes)
+		entries, err := os.ReadDir(providerPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read UserData directory: %w", err)
+		}
+
+		for _, entry := range entries {
+			if entry.IsDir() {
+				dirPath := fmt.Sprintf("%s/%s", providerPath, entry.Name())
+				size, _ := calculateDirSize(dirPath)
+				content = append(content, fmt.Sprintf("%s (%s)", entry.Name(), formatBytes(size)))
+			}
+		}
+	}
+
+	return content, nil
+}
+
 func calculateDirSize(path string) (int64, error) {
 var size int64
 err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
@@ -159,4 +222,17 @@ return size, err
 func exists(path string) bool {
 _, err := os.Stat(path)
 return err == nil
+}
+
+func formatBytes(bytes int64) string {
+const unit = 1024
+if bytes < unit {
+return fmt.Sprintf("%d B", bytes)
+}
+div, exp := int64(unit), 0
+for n := bytes / unit; n >= unit; n /= unit {
+div *= unit
+exp++
+}
+return fmt.Sprintf("%.1f %ciB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
