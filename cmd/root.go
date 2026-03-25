@@ -59,11 +59,21 @@ type StatusCmd struct {
 
 // Run executes the status command
 func (c *StatusCmd) Run() error {
-	globalApp.Log.Term.Info().Msg("Continuity Status: Ready")
-	globalApp.Log.Term.Info().Msgf("Repository: %s", globalCore.Config.RepositoryPath)
-	globalApp.Log.Term.Info().Msgf("Deduplication: %v", globalCore.Config.DefaultDeduplicate)
-	globalApp.Log.Term.Info().Msgf("Retention (keep last): %d", globalCore.Config.RetentionKeepLast)
-	return nil
+	dedup := "no"
+	if globalCore.Config.DefaultDeduplicate {
+		dedup = "yes"
+	}
+
+	fmt.Println("\nContinuity Status\n")
+	return globalApp.CLI.Table(
+		[]string{"Setting", "Value"},
+		[][]string{
+			{"Status", "Ready"},
+			{"Repository", globalCore.Config.RepositoryPath},
+			{"Deduplication", dedup},
+			{"Retention (keep last)", fmt.Sprintf("%d", globalCore.Config.RetentionKeepLast)},
+		},
+	)
 }
 
 // BackupCmd creates a new backup

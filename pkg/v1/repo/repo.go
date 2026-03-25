@@ -143,42 +143,50 @@ func (m *Manager) GetSnapshotProviders(snapshotID string) ([]string, error) {
 	return providers, nil
 }
 
-// GetProviderContent returns human-readable content summary for a provider
-func (m *Manager) GetProviderContent(snapshotID, providerName string) ([]string, error) {
+// ProviderContent holds structured table data for a provider's content.
+type ProviderContent struct {
+	Headers []string
+	Rows    [][]string
+}
+
+// GetProviderContent returns structured table data for a provider's content.
+func (m *Manager) GetProviderContent(snapshotID, providerName string) (*ProviderContent, error) {
 	snapshotPath := fmt.Sprintf("%s/snapshots/%s/tree", m.Config.RepositoryPath, snapshotID)
 	providerPath := fmt.Sprintf("%s/%s", snapshotPath, providerName)
 
-	var content []string
+	result := &ProviderContent{}
 
 	switch providerName {
 	case "Flatpak":
-		// Read flatpak.json
-		jsonPath := fmt.Sprintf("%s/flatpak.json", providerPath)
+		result.Headers = []string{"Name", "ID"}
+
+		jsonPath := fmt.Sprintf("%s/flatpak-apps.json", providerPath)
 		data, err := os.ReadFile(jsonPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read flatpak.json: %w", err)
+			return nil, fmt.Errorf("failed to read flatpak-apps.json: %w", err)
 		}
 
 		var apps []map[string]interface{}
 		if err := json.Unmarshal(data, &apps); err != nil {
-			return nil, fmt.Errorf("failed to parse flatpak.json: %w", err)
+			return nil, fmt.Errorf("failed to parse flatpak-apps.json: %w", err)
 		}
 
 		for _, app := range apps {
-			name := app["name"]
-			appID := app["application"]
-			content = append(content, fmt.Sprintf("%s (%s)", name, appID))
+			name := fmt.Sprintf("%v", app["name"])
+			appID := fmt.Sprintf("%v", app["ref"])
+			result.Rows = append(result.Rows, []string{name, appID})
 		}
 
 	case "ABRoot":
-		// List files in abroot directory
+		result.Headers = []string{"File", "Size"}
+
 		err := filepath.Walk(providerPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
 			if !info.IsDir() {
 				relPath, _ := filepath.Rel(providerPath, path)
-				content = append(content, fmt.Sprintf("%s (%s)", relPath, formatBytes(info.Size())))
+				result.Rows = append(result.Rows, []string{relPath, formatBytes(info.Size())})
 			}
 			return nil
 		})
@@ -187,7 +195,8 @@ func (m *Manager) GetProviderContent(snapshotID, providerName string) ([]string,
 		}
 
 	case "UserData":
-		// List top-level directories (user homes)
+		result.Headers = []string{"User", "Size"}
+
 		entries, err := os.ReadDir(providerPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read UserData directory: %w", err)
@@ -197,12 +206,12 @@ func (m *Manager) GetProviderContent(snapshotID, providerName string) ([]string,
 			if entry.IsDir() {
 				dirPath := fmt.Sprintf("%s/%s", providerPath, entry.Name())
 				size, _ := calculateDirSize(dirPath)
-				content = append(content, fmt.Sprintf("%s (%s)", entry.Name(), formatBytes(size)))
+				result.Rows = append(result.Rows, []string{entry.Name(), formatBytes(size)})
 			}
 		}
 	}
 
-	return content, nil
+	return result, nil
 }
 
 func calculateDirSize(path string) (int64, error) {

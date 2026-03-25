@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/vanilla-os/continuity/pkg/v1/providers"
@@ -124,33 +125,40 @@ func (m *Manager) ListBackups(detailed bool) error {
 		return fmt.Errorf("failed to list snapshots: %w", err)
 	}
 
-	m.App.Log.Term.Info().Msgf("Found %d backups:", len(snapshots))
-
-	if detailed {
-		for _, snapshot := range snapshots {
-			m.App.Log.Term.Info().Msgf("  ID:        %s", snapshot.ID)
-			m.App.Log.Term.Info().Msgf("  Created:   %s", snapshot.CreatedAt.Format(time.RFC3339))
-			m.App.Log.Term.Info().Msgf("  Dedup:     %v", snapshot.Deduplicate)
-
-			size, err := m.RepoMgr.GetSnapshotSize(snapshot.ID)
-			if err == nil {
-				m.App.Log.Term.Info().Msgf("  Size:      %s", formatBytes(size))
-			}
-
-			providers, err := m.RepoMgr.GetSnapshotProviders(snapshot.ID)
-			if err == nil && len(providers) > 0 {
-				m.App.Log.Term.Info().Msgf("  Providers: %v", providers)
-			}
-
-			m.App.Log.Term.Info().Msg("")
-		}
-	} else {
-		for _, snapshot := range snapshots {
-			m.App.Log.Term.Info().Msgf("  - %s (%s)", snapshot.ID, snapshot.CreatedAt.Format(time.RFC3339))
-		}
+	if len(snapshots) == 0 {
+		fmt.Println("No backups found.")
+		return nil
 	}
 
-	return nil
+	headers := []string{"ID", "Created", "Size", "Dedup", "Providers"}
+	var rows [][]string
+
+	for _, snapshot := range snapshots {
+		size := "-"
+		if s, err := m.RepoMgr.GetSnapshotSize(snapshot.ID); err == nil {
+			size = formatBytes(s)
+		}
+
+		providers := "-"
+		if p, err := m.RepoMgr.GetSnapshotProviders(snapshot.ID); err == nil && len(p) > 0 {
+			providers = strings.Join(p, ", ")
+		}
+
+		dedup := "no"
+		if snapshot.Deduplicate {
+			dedup = "yes"
+		}
+
+		rows = append(rows, []string{
+			snapshot.ID,
+			snapshot.CreatedAt.Format(time.RFC3339),
+			size,
+			dedup,
+			providers,
+		})
+	}
+
+	return m.App.CLI.Table(headers, rows)
 }
 
 // InspectBackup shows detailed information about a specific backup
@@ -172,43 +180,49 @@ func (m *Manager) InspectBackup(snapshotID string) error {
 		return fmt.Errorf("snapshot not found: %s", snapshotID)
 	}
 
-	m.App.Log.Term.Info().Msgf("===== SNAPSHOT: %s =====", target.ID)
-	m.App.Log.Term.Info().Msgf("Created:      %s", target.CreatedAt.Format(time.RFC3339))
-	m.App.Log.Term.Info().Msgf("Source:       %s", target.SourcePath)
-	m.App.Log.Term.Info().Msgf("Deduplication: %v", target.Deduplicate)
-
-	size, err := m.RepoMgr.GetSnapshotSize(target.ID)
-	if err == nil {
-		m.App.Log.Term.Info().Msgf("Size:         %s", formatBytes(size))
+	size := "-"
+	if s, err := m.RepoMgr.GetSnapshotSize(target.ID); err == nil {
+		size = formatBytes(s)
 	}
 
-	m.App.Log.Term.Info().Msg("\nProviders included:")
+	dedup := "no"
+	if target.Deduplicate {
+		dedup = "yes"
+	}
+
+	fmt.Printf("\nSnapshot: %s\n\n", target.ID)
+	m.App.CLI.Table(
+		[]string{"Field", "Value"},
+		[][]string{
+			{"Created", target.CreatedAt.Format(time.RFC3339)},
+			{"Source", target.SourcePath},
+			{"Deduplication", dedup},
+			{"Size", size},
+		},
+	)
+
 	providers, err := m.RepoMgr.GetSnapshotProviders(target.ID)
-	if err == nil {
-		for _, provider := range providers {
-			m.App.Log.Term.Info().Msgf("  - %s", provider)
-		}
-
-		// Show provider content
-		m.App.Log.Term.Info().Msg("\nProvider content:")
-		for _, provider := range providers {
-			content, err := m.RepoMgr.GetProviderContent(target.ID, provider)
-			if err != nil {
-				m.App.Log.Term.Warn().Msgf("  %s: Could not read content: %v", provider, err)
-				continue
-			}
-
-			if len(content) > 0 {
-				m.App.Log.Term.Info().Msgf("\n  %s:", provider)
-				for _, line := range content {
-					m.App.Log.Term.Info().Msgf("    %s", line)
-				}
-			}
-		}
-	} else {
-		m.App.Log.Term.Warn().Msgf("  Could not determine providers: %v", err)
+	if err != nil {
+		m.App.Log.Term.Warn().Msgf("Could not determine providers: %v", err)
+		return nil
 	}
 
+	for _, provider := range providers {
+		content, err := m.RepoMgr.GetProviderContent(target.ID, provider)
+		if err != nil {
+			m.App.Log.Term.Warn().Msgf("%s: could not read content: %v", provider, err)
+			continue
+		}
+
+		fmt.Printf("\n%s\n\n", provider)
+		if len(content.Rows) == 0 {
+			fmt.Println("  (no content)")
+			continue
+		}
+		m.App.CLI.Table(content.Headers, content.Rows)
+	}
+
+	fmt.Println()
 	return nil
 }
 
