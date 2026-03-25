@@ -84,10 +84,32 @@ sudo continuity backup before-upgrade
 #### `continuity list`
 List all available backups.
 
+**Options:**
+- `--details`: Show detailed information (size, providers, deduplication)
+
 **Example:**
 ```bash
 continuity list
+continuity list --details
 ```
+
+#### `continuity inspect <snapshot-id>`
+Show detailed information about a specific backup snapshot.
+
+**Arguments:**
+- `snapshot-id` (required): ID of the snapshot to inspect
+
+**Example:**
+```bash
+continuity inspect 20260325T094705Z-68b19f6b
+```
+
+**Output includes:**
+- Snapshot ID and creation timestamp
+- Total size (deduplicated)
+- Source path
+- Providers included (UserData, Flatpak, ABRoot)
+- Deduplication status
 
 #### `continuity restore <snapshot-id>`
 Restore from a backup snapshot.

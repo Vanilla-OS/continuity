@@ -126,6 +126,27 @@ continuity backup test-label --dry-run
 continuity restore <snapshot-id> --dry-run
 ```
 
+### Inspecting backups
+
+View detailed information about your backups:
+
+```bash
+# List all backups
+continuity list
+
+# List with detailed information (size, providers, deduplication)
+continuity list --details
+
+# Inspect a specific snapshot
+continuity inspect <snapshot-id>
+```
+
+The `inspect` command shows:
+- Snapshot ID and creation date
+- Total size (deduplicated)
+- Providers included (UserData, Flatpak, ABRoot)
+- Source path and deduplication status
+
 ### LUKS encryption
 
 Continuity supports LUKS2 encryption for backup repositories. This is useful when storing backups on USB devices:

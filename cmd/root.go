@@ -28,6 +28,7 @@ type RootCmd struct {
 	Status  StatusCmd  `cmd:"status" help:"Show Continuity status"`
 	Backup  BackupCmd  `cmd:"backup" help:"Create a new backup"`
 	List    ListCmd    `cmd:"list" help:"List all backups"`
+	Inspect InspectCmd `cmd:"inspect" help:"Inspect a backup snapshot"`
 	Restore RestoreCmd `cmd:"restore" help:"Restore from a backup"`
 	Prune   PruneCmd   `cmd:"prune" help:"Prune old backups"`
 	Daemon  DaemonCmd  `cmd:"daemon" help:"Start DBus daemon"`
@@ -96,6 +97,7 @@ func (c *BackupCmd) Run() error {
 // ListCmd lists all backups
 type ListCmd struct {
 	cli.Base
+	Details bool `name:"details" help:"Show detailed information for each backup"`
 }
 
 // Run executes the list command
@@ -106,7 +108,7 @@ func (c *ListCmd) Run() error {
 	}
 
 	backupMgr := backup.NewManager(globalApp, repoMgr, globalCore.Config.ExcludePatterns, globalCore.Config.EnabledProviders, false)
-	if err := backupMgr.ListBackups(); err != nil {
+	if err := backupMgr.ListBackups(c.Details); err != nil {
 		return fmt.Errorf("failed to list backups: %w", err)
 	}
 
@@ -178,5 +180,26 @@ func (c *PruneCmd) Run() error {
 	}
 
 	globalApp.Log.Term.Info().Msgf("Prune completed (kept last %d snapshots)", c.KeepLast)
+	return nil
+}
+
+// InspectCmd inspects a backup snapshot
+type InspectCmd struct {
+	cli.Base
+	SnapshotID string `arg:"" help:"Snapshot ID to inspect"`
+}
+
+// Run executes the inspect command
+func (c *InspectCmd) Run() error {
+	repoMgr, err := repo.NewManager(globalApp, globalCore.Config)
+	if err != nil {
+		return fmt.Errorf("failed to initialize repository: %w", err)
+	}
+
+	backupMgr := backup.NewManager(globalApp, repoMgr, globalCore.Config.ExcludePatterns, globalCore.Config.EnabledProviders, false)
+	if err := backupMgr.InspectBackup(c.SnapshotID); err != nil {
+		return fmt.Errorf("failed to inspect backup: %w", err)
+	}
+
 	return nil
 }

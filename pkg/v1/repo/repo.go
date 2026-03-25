@@ -9,6 +9,8 @@ Description: Repository manager wrapper around SDK backup primitives.
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/vanilla-os/continuity/pkg/v1/config"
 	"github.com/vanilla-os/sdk/pkg/v1/app"
@@ -38,7 +40,7 @@ func NewManager(app *app.App, cfg *config.Config) (*Manager, error) {
 }
 
 // CreateSnapshot creates a new backup snapshot
-func (m *Manager) CreateSnapshot(source string, tags map[string]string) (string, error) {
+func (m *Manager) CreateSnapshot(source string, _ map[string]string) (string, error) {
 	m.App.Log.Term.Info().Msgf("Creating snapshot from %s", source)
 
 	opts := backup.CreateSnapshotOptions{
@@ -108,4 +110,53 @@ func (m *Manager) PruneOld(keepLast int) error {
 
 	m.App.Log.Term.Info().Msgf("Pruned %d old snapshots", len(deleted))
 	return nil
+}
+
+// GetSnapshotSize calculates the total size of a snapshot
+func (m *Manager) GetSnapshotSize(snapshotID string) (int64, error) {
+	snapshotPath := fmt.Sprintf("%s/snapshots/%s", m.Config.RepositoryPath, snapshotID)
+	size, err := calculateDirSize(snapshotPath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to calculate size: %w", err)
+	}
+	return size, nil
+}
+
+// GetSnapshotProviders returns the list of providers used in a snapshot
+func (m *Manager) GetSnapshotProviders(snapshotID string) ([]string, error) {
+	snapshotPath := fmt.Sprintf("%s/snapshots/%s/tree", m.Config.RepositoryPath, snapshotID)
+
+	var providers []string
+
+	// Check for provider-specific directories
+	if exists(fmt.Sprintf("%s/UserData", snapshotPath)) {
+		providers = append(providers, "UserData")
+	}
+	if exists(fmt.Sprintf("%s/Flatpak", snapshotPath)) {
+		providers = append(providers, "Flatpak")
+	}
+	if exists(fmt.Sprintf("%s/ABRoot", snapshotPath)) {
+		providers = append(providers, "ABRoot")
+	}
+
+	return providers, nil
+}
+
+func calculateDirSize(path string) (int64, error) {
+var size int64
+err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+if err != nil {
+return err
+}
+if !info.IsDir() {
+size += info.Size()
+}
+return nil
+})
+return size, err
+}
+
+func exists(path string) bool {
+_, err := os.Stat(path)
+return err == nil
 }

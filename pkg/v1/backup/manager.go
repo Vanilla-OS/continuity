@@ -16,6 +16,7 @@ import (
 	"github.com/vanilla-os/continuity/pkg/v1/providers"
 	"github.com/vanilla-os/continuity/pkg/v1/repo"
 	"github.com/vanilla-os/sdk/pkg/v1/app"
+	sdkbackup "github.com/vanilla-os/sdk/pkg/v1/backup"
 	"github.com/vanilla-os/sdk/pkg/v1/fs"
 )
 
@@ -117,18 +118,94 @@ func (m *Manager) RunBackup(label string) (string, error) {
 }
 
 // ListBackups lists all available backups
-func (m *Manager) ListBackups() error {
+func (m *Manager) ListBackups(detailed bool) error {
 	snapshots, err := m.RepoMgr.ListSnapshots()
 	if err != nil {
 		return fmt.Errorf("failed to list snapshots: %w", err)
 	}
 
 	m.App.Log.Term.Info().Msgf("Found %d backups:", len(snapshots))
-	for _, snapshot := range snapshots {
-		m.App.Log.Term.Info().Msgf("  - %s (%s)", snapshot.ID, snapshot.CreatedAt.Format(time.RFC3339))
+
+	if detailed {
+		for _, snapshot := range snapshots {
+			m.App.Log.Term.Info().Msgf("  ID:        %s", snapshot.ID)
+			m.App.Log.Term.Info().Msgf("  Created:   %s", snapshot.CreatedAt.Format(time.RFC3339))
+			m.App.Log.Term.Info().Msgf("  Dedup:     %v", snapshot.Deduplicate)
+
+			size, err := m.RepoMgr.GetSnapshotSize(snapshot.ID)
+			if err == nil {
+				m.App.Log.Term.Info().Msgf("  Size:      %s", formatBytes(size))
+			}
+
+			providers, err := m.RepoMgr.GetSnapshotProviders(snapshot.ID)
+			if err == nil && len(providers) > 0 {
+				m.App.Log.Term.Info().Msgf("  Providers: %v", providers)
+			}
+
+			m.App.Log.Term.Info().Msg("")
+		}
+	} else {
+		for _, snapshot := range snapshots {
+			m.App.Log.Term.Info().Msgf("  - %s (%s)", snapshot.ID, snapshot.CreatedAt.Format(time.RFC3339))
+		}
 	}
 
 	return nil
+}
+
+// InspectBackup shows detailed information about a specific backup
+func (m *Manager) InspectBackup(snapshotID string) error {
+	snapshots, err := m.RepoMgr.ListSnapshots()
+	if err != nil {
+		return fmt.Errorf("failed to list snapshots: %w", err)
+	}
+
+	var target *sdkbackup.SnapshotManifest
+	for i := range snapshots {
+		if snapshots[i].ID == snapshotID {
+			target = &snapshots[i]
+			break
+		}
+	}
+
+	if target == nil {
+		return fmt.Errorf("snapshot not found: %s", snapshotID)
+	}
+
+	m.App.Log.Term.Info().Msgf("===== SNAPSHOT: %s =====", target.ID)
+	m.App.Log.Term.Info().Msgf("Created:      %s", target.CreatedAt.Format(time.RFC3339))
+	m.App.Log.Term.Info().Msgf("Source:       %s", target.SourcePath)
+	m.App.Log.Term.Info().Msgf("Deduplication: %v", target.Deduplicate)
+
+	size, err := m.RepoMgr.GetSnapshotSize(target.ID)
+	if err == nil {
+		m.App.Log.Term.Info().Msgf("Size:         %s", formatBytes(size))
+	}
+
+	m.App.Log.Term.Info().Msg("\nProviders included:")
+	providers, err := m.RepoMgr.GetSnapshotProviders(target.ID)
+	if err == nil {
+		for _, provider := range providers {
+			m.App.Log.Term.Info().Msgf("  - %s", provider)
+		}
+	} else {
+		m.App.Log.Term.Warn().Msgf("  Could not determine providers: %v", err)
+	}
+
+	return nil
+}
+
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 func getHostname() string {
