@@ -1,0 +1,15 @@
+[Unit]
+Description=Vanilla Continuity DBus Service
+Documentation=https://github.com/vanilla-os/continuity
+After=network.target dbus.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/continuity daemon
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
