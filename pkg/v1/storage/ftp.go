@@ -100,15 +100,14 @@ func (r *byteReader) Read(p []byte) (int, error) {
 }
 
 // MkdirAll creates remote directories recursively.
-// It checks existence first via List to avoid misinterpreting
-// "already exists" errors from MakeDir as real failures.
+// Uses ChangeDir to check existence since List may fail with restricted permissions.
 func (b *FTPBackend) MkdirAll(path string, _ os.FileMode) error {
 	if path == "" || path == "." || path == "/" {
 		return nil
 	}
 
-	// If the directory already exists, nothing to do.
-	if _, err := b.conn.List(path); err == nil {
+	// CWD is a lighter existence check that works even without LIST permissions.
+	if err := b.conn.ChangeDir(path); err == nil {
 		return nil
 	}
 
@@ -119,10 +118,10 @@ func (b *FTPBackend) MkdirAll(path string, _ os.FileMode) error {
 		}
 	}
 
-	// Create the directory, tolerating a race where it was just created.
+	// Create directory; tolerate a race where it was just created.
 	if err := b.conn.MakeDir(path); err != nil {
-		if _, listErr := b.conn.List(path); listErr == nil {
-			return nil // already exists, created concurrently
+		if cdErr := b.conn.ChangeDir(path); cdErr == nil {
+			return nil // already exists
 		}
 		return fmt.Errorf("ftp: MkdirAll %s: %w", path, err)
 	}
