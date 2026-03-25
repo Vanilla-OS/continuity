@@ -26,7 +26,9 @@ func TestDefault(t *testing.T) {
 func TestLoad(t *testing.T) {
 	tmpDir := t.TempDir()
 	confDir := filepath.Join(tmpDir, "continuity")
-	os.MkdirAll(confDir, 0755)
+	if err := os.MkdirAll(confDir, 0755); err != nil {
+		t.Fatalf("Failed to create config dir: %v", err)
+	}
 
 	cfgPath := filepath.Join(confDir, "config.json")
 	testCfg := map[string]interface{}{
@@ -36,7 +38,9 @@ func TestLoad(t *testing.T) {
 	}
 
 	data, _ := json.MarshalIndent(testCfg, "", "  ")
-	os.WriteFile(cfgPath, data, 0644)
+	if err := os.WriteFile(cfgPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
 
 	os.Setenv("XDG_CONFIG_HOME", tmpDir)
 	defer os.Unsetenv("XDG_CONFIG_HOME")

@@ -75,8 +75,12 @@ func (s *Service) Start() error {
 		return fmt.Errorf("name already taken")
 	}
 
-	s.conn.Export(s, dbus.ObjectPath(dbusPath), dbusInterface)
-	s.conn.Export(introspect.Introspectable(introspectXML), dbus.ObjectPath(dbusPath), "org.freedesktop.DBus.Introspectable")
+	if err := s.conn.Export(s, dbus.ObjectPath(dbusPath), dbusInterface); err != nil {
+		return fmt.Errorf("failed to export service: %w", err)
+	}
+	if err := s.conn.Export(introspect.Introspectable(introspectXML), dbus.ObjectPath(dbusPath), "org.freedesktop.DBus.Introspectable"); err != nil {
+		return fmt.Errorf("failed to export introspection: %w", err)
+	}
 
 	s.App.Log.Term.Info().Msgf("DBus service started on %s", dbusInterface)
 	return nil

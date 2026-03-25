@@ -51,5 +51,8 @@ func main() {
 	}
 
 	// Execute CLI
-	continuityApp.CLI.Execute()
+	if err := continuityApp.CLI.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "CLI execution failed: %v\n", err)
+		os.Exit(1)
+	}
 }
