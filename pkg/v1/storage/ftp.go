@@ -8,16 +8,26 @@ Description: FTP remote storage backend.
 */
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jlaffaye/ftp"
 	"github.com/vanilla-os/continuity/pkg/v1/config"
 )
+
+// copyTask holds the metadata for a single file to upload.
+type copyTask struct {
+	localPath  string
+	remotePath string
+	mode       os.FileMode
+}
 
 // clearProgress clears the current progress line.
 func clearProgress() {
@@ -255,6 +265,25 @@ func (b *FTPBackend) Rename(oldPath, newPath string) error {
 	return b.conn.Rename(oldPath, newPath)
 }
 
+// newConn dials a fresh FTP connection authenticated with the same credentials.
+func (b *FTPBackend) newConn() (*ftp.ServerConn, error) {
+	r := b.cfg.Remote
+	port := r.Port
+	if port == 0 {
+		port = 21
+	}
+	addr := fmt.Sprintf("%s:%d", r.Host, port)
+	conn, err := ftp.Dial(addr, ftp.DialWithTimeout(30*time.Second))
+	if err != nil {
+		return nil, fmt.Errorf("ftp: failed to dial %s: %w", addr, err)
+	}
+	if err := conn.Login(r.User, r.Password); err != nil {
+		conn.Quit()
+		return nil, fmt.Errorf("ftp: login failed: %w", err)
+	}
+	return conn, nil
+}
+
 // CopyFromNative uploads nativeSrc (local path) directly to backendDst (remote path).
 func (b *FTPBackend) CopyFromNative(nativeSrc, backendDst string, excludePatterns []string) error {
 	// Resolve symlinks on the root so filepath.Walk can descend into it.
@@ -263,6 +292,10 @@ func (b *FTPBackend) CopyFromNative(nativeSrc, backendDst string, excludePattern
 	if err != nil {
 		return fmt.Errorf("failed to resolve path %s: %w", nativeSrc, err)
 	}
+
+	// Phase 1: Walk and collect file tasks and directories.
+	var tasks []copyTask
+	var dirs []string
 
 	err = filepath.Walk(resolvedSrc, func(localPath string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -285,7 +318,8 @@ func (b *FTPBackend) CopyFromNative(nativeSrc, backendDst string, excludePattern
 		remotePath := filepath.Join(backendDst, relPath)
 
 		if info.IsDir() {
-			return b.MkdirAll(remotePath, 0755)
+			dirs = append(dirs, remotePath)
+			return nil
 		}
 
 		// Skip non-regular files: sockets, devices, named pipes, symlinks.
@@ -293,22 +327,94 @@ func (b *FTPBackend) CopyFromNative(nativeSrc, backendDst string, excludePattern
 			return nil
 		}
 
-		fmt.Fprintf(os.Stderr, "\r\033[2K  → %s", progressPath(localPath))
-
-		if err := b.MkdirAll(filepath.Dir(remotePath), 0755); err != nil {
-			return err
-		}
-
-		f, err := os.Open(localPath)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
-		return b.conn.Stor(remotePath, f)
+		tasks = append(tasks, copyTask{
+			localPath:  localPath,
+			remotePath: remotePath,
+			mode:       info.Mode(),
+		})
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// Phase 2: Create all directories sequentially on main connection (parent-first order).
+	for _, dir := range dirs {
+		if err := b.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+	}
+
+	// Phase 3: Parallel upload.
+	workers := b.cfg.MaxParallelWorkers
+	if workers < 1 {
+		workers = 1
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	taskCh := make(chan copyTask)
+	errCh := make(chan error, workers)
+	var wg sync.WaitGroup
+	var uploaded int64
+	total := len(tasks)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			conn, err := b.newConn()
+			if err != nil {
+				errCh <- err
+				cancel()
+				return
+			}
+			defer conn.Quit()
+
+			for task := range taskCh {
+				if ctx.Err() != nil {
+					return
+				}
+
+				f, err := os.Open(task.localPath)
+				if err != nil {
+					errCh <- err
+					cancel()
+					return
+				}
+				err = conn.Stor(task.remotePath, f)
+				f.Close()
+				if err != nil {
+					errCh <- err
+					cancel()
+					return
+				}
+
+				n := atomic.AddInt64(&uploaded, 1)
+				fmt.Fprintf(os.Stderr, "\r\033[2K  → %d/%d files", n, total)
+			}
+		}()
+	}
+
+	for _, task := range tasks {
+		select {
+		case taskCh <- task:
+		case <-ctx.Done():
+		}
+	}
+	close(taskCh)
+
+	wg.Wait()
 	clearProgress()
-	return err
+
+	close(errCh)
+	for e := range errCh {
+		if e != nil {
+			return e
+		}
+	}
+	return nil
 }
 
 // CopyToNative downloads backendSrc (remote path) to nativeDst (local path).

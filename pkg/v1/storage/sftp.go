@@ -8,11 +8,14 @@ Description: SFTP remote storage backend.
 */
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/sftp"
@@ -218,6 +221,10 @@ func (b *SFTPBackend) CopyFromNative(nativeSrc, backendDst string, excludePatter
 		return fmt.Errorf("failed to resolve path %s: %w", nativeSrc, err)
 	}
 
+	// Phase 1: Walk and collect file tasks and directories.
+	var tasks []copyTask
+	var dirs []string
+
 	err = filepath.Walk(resolvedSrc, func(localPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "\r\033[K  ⚠ skipped %s: %v\n", localPath, err)
@@ -239,7 +246,8 @@ func (b *SFTPBackend) CopyFromNative(nativeSrc, backendDst string, excludePatter
 		remotePath := filepath.Join(backendDst, relPath)
 
 		if info.IsDir() {
-			return b.client.MkdirAll(remotePath)
+			dirs = append(dirs, remotePath)
+			return nil
 		}
 
 		// Skip non-regular files: sockets, devices, named pipes, symlinks.
@@ -247,29 +255,97 @@ func (b *SFTPBackend) CopyFromNative(nativeSrc, backendDst string, excludePatter
 			return nil
 		}
 
-		fmt.Fprintf(os.Stderr, "\r\033[2K  → %s", progressPath(localPath))
-
-		if err := b.client.MkdirAll(filepath.Dir(remotePath)); err != nil {
-			return err
-		}
-
-		src, err := os.Open(localPath)
-		if err != nil {
-			return err
-		}
-		defer src.Close()
-
-		dst, err := b.client.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
-		if err != nil {
-			return err
-		}
-		defer dst.Close()
-
-		_, err = io.Copy(dst, src)
-		return err
+		tasks = append(tasks, copyTask{
+			localPath:  localPath,
+			remotePath: remotePath,
+			mode:       info.Mode(),
+		})
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// Phase 2: Create all directories sequentially (parent-first order).
+	for _, dir := range dirs {
+		if err := b.client.MkdirAll(dir); err != nil {
+			return err
+		}
+	}
+
+	// Phase 3: Parallel upload — workers share b.client (concurrent-safe).
+	workers := b.cfg.MaxParallelWorkers
+	if workers < 1 {
+		workers = 1
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	taskCh := make(chan copyTask)
+	errCh := make(chan error, workers)
+	var wg sync.WaitGroup
+	var uploaded int64
+	total := len(tasks)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			for task := range taskCh {
+				if ctx.Err() != nil {
+					return
+				}
+
+				src, err := os.Open(task.localPath)
+				if err != nil {
+					errCh <- err
+					cancel()
+					return
+				}
+
+				dst, err := b.client.OpenFile(task.remotePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+				if err != nil {
+					src.Close()
+					errCh <- err
+					cancel()
+					return
+				}
+
+				_, err = io.Copy(dst, src)
+				dst.Close()
+				src.Close()
+				if err != nil {
+					errCh <- err
+					cancel()
+					return
+				}
+
+				n := atomic.AddInt64(&uploaded, 1)
+				fmt.Fprintf(os.Stderr, "\r\033[2K  → %d/%d files", n, total)
+			}
+		}()
+	}
+
+	for _, task := range tasks {
+		select {
+		case taskCh <- task:
+		case <-ctx.Done():
+		}
+	}
+	close(taskCh)
+
+	wg.Wait()
 	fmt.Fprintf(os.Stderr, "\r\033[K")
-	return err
+
+	close(errCh)
+	for e := range errCh {
+		if e != nil {
+			return e
+		}
+	}
+	return nil
 }
 
 // CopyToNative downloads backendSrc (remote path) to nativeDst (local path).
