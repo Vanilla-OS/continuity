@@ -236,6 +236,12 @@ func (b *SFTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 		}
 		defer src.Close()
 
+		// filepath.Walk uses Lstat, so symlinks to dirs pass the IsDir check above.
+		// Re-stat the opened file to catch that case and create the dir instead.
+		if fi, err := src.Stat(); err == nil && fi.IsDir() {
+			return b.client.MkdirAll(remotePath)
+		}
+
 		dst, err := b.client.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
 		if err != nil {
 			return err

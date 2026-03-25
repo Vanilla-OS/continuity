@@ -277,6 +277,12 @@ func (b *FTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 		}
 		defer f.Close()
 
+		// filepath.Walk uses Lstat, so symlinks to dirs pass the IsDir check above.
+		// Re-stat the opened file to catch that case and create the dir instead.
+		if fi, err := f.Stat(); err == nil && fi.IsDir() {
+			return b.MkdirAll(remotePath, 0755)
+		}
+
 		return b.conn.Stor(remotePath, f)
 	})
 }
