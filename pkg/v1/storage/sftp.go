@@ -210,7 +210,7 @@ func (b *SFTPBackend) Rename(oldPath, newPath string) error {
 }
 
 // CopyFromNative uploads nativeSrc (local path) directly to backendDst (remote path).
-func (b *SFTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
+func (b *SFTPBackend) CopyFromNative(nativeSrc, backendDst string, excludePatterns []string) error {
 	// Resolve symlinks on the root so filepath.Walk can descend into it.
 	// (filepath.Walk does not follow symlinks, including the root itself.)
 	resolvedSrc, err := filepath.EvalSymlinks(nativeSrc)
@@ -228,6 +228,14 @@ func (b *SFTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 		if err != nil {
 			return err
 		}
+
+		if relPath != "." && shouldExclude(relPath, excludePatterns) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
 		remotePath := filepath.Join(backendDst, relPath)
 
 		if info.IsDir() {
@@ -239,7 +247,7 @@ func (b *SFTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 			return nil
 		}
 
-		fmt.Fprintf(os.Stderr, "\r\033[K  → %s", localPath)
+		fmt.Fprintf(os.Stderr, "\r\033[2K  → %s", progressPath(localPath))
 
 		if err := b.client.MkdirAll(filepath.Dir(remotePath)); err != nil {
 			return err

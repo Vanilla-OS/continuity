@@ -108,7 +108,7 @@ func (b *SMBBackend) ReadDir(path string) ([]os.DirEntry, error)                
 func (b *SMBBackend) Stat(path string) (os.FileInfo, error)                      { return b.local.Stat(path) }
 func (b *SMBBackend) Walk(root string, fn filepath.WalkFunc) error               { return b.local.Walk(root, fn) }
 func (b *SMBBackend) Rename(oldPath, newPath string) error                       { return b.local.Rename(oldPath, newPath) }
-func (b *SMBBackend) CopyFromNative(nativeSrc, backendDst string) error          { return b.local.CopyFromNative(nativeSrc, backendDst) }
+func (b *SMBBackend) CopyFromNative(nativeSrc, backendDst string, excludePatterns []string) error { return b.local.CopyFromNative(nativeSrc, backendDst, excludePatterns) }
 func (b *SMBBackend) CopyToNative(backendSrc, nativeDst string) error            { return b.local.CopyToNative(backendSrc, nativeDst) }
 func (b *SMBBackend) BasePath() string                                           { return b.local.BasePath() }
 func (b *SMBBackend) IsLocal() bool                                              { return true }

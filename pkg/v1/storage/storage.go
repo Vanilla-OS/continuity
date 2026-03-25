@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/vanilla-os/continuity/pkg/v1/config"
 )
@@ -33,7 +34,9 @@ type Backend interface {
 
 	// CopyFromNative streams a local filesystem path directly to this backend.
 	// For SFTP/FTP this uploads without local staging.
-	CopyFromNative(nativeSrc, backendDst string) error
+	// excludePatterns is a list of glob patterns (matched against name or rel path)
+	// to skip; matching directories are skipped entirely with filepath.SkipDir.
+	CopyFromNative(nativeSrc, backendDst string, excludePatterns []string) error
 
 	// CopyToNative downloads from this backend to a local filesystem path.
 	CopyToNative(backendSrc, nativeDst string) error
@@ -74,7 +77,37 @@ func NewBackend(cfg *config.Config) (Backend, error) {
 	}
 }
 
-// validateRemoteConfig checks that the remote config is sane before connecting.
+// shouldExclude returns true if relPath matches any of the given patterns.
+// Patterns are matched against the base name and against the full relative path.
+// A matching directory should be skipped with filepath.SkipDir.
+func shouldExclude(relPath string, patterns []string) bool {
+	base := filepath.Base(relPath)
+	for _, pattern := range patterns {
+		if pattern == "" {
+			continue
+		}
+		if matched, _ := filepath.Match(pattern, base); matched {
+			return true
+		}
+		// Support path-like patterns (e.g. ".local/share/Trash").
+		if strings.ContainsRune(pattern, '/') {
+			if matched, _ := filepath.Match(pattern, relPath); matched {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// progressPath truncates a filesystem path so it fits on one terminal line.
+// Shows the tail of the path with a leading ellipsis when too long.
+func progressPath(path string) string {
+	const maxLen = 100
+	if len(path) <= maxLen {
+		return path
+	}
+	return "…" + path[len(path)-maxLen+1:]
+}
 func validateRemoteConfig(r *config.RemoteConfig) error {
 	if r.Host == "" {
 		return fmt.Errorf("remote config: host is required for backend type %q", r.Type)

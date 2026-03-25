@@ -37,7 +37,7 @@ func (p *ABRootProvider) Backup(app *app.App, backend storage.Backend, destPath 
 
 	app.Log.Term.Info().Msgf("Copying %s to %s", abrootSource, abrootDest)
 
-	if err := backend.CopyFromNative(abrootSource, abrootDest); err != nil {
+	if err := backend.CopyFromNative(abrootSource, abrootDest, nil); err != nil {
 		return fmt.Errorf("failed to copy ABRoot metadata: %w", err)
 	}
 

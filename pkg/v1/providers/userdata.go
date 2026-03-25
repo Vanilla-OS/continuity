@@ -41,7 +41,7 @@ func (p *UserDataProvider) Backup(app *app.App, backend storage.Backend, destPat
 
 	app.Log.Term.Info().Msgf("Copying %s to %s", homeSource, homeDest)
 
-	if err := backend.CopyFromNative(homeSource, homeDest); err != nil {
+	if err := backend.CopyFromNative(homeSource, homeDest, p.ExcludePatterns); err != nil {
 		return fmt.Errorf("failed to copy %s: %w", homeSource, err)
 	}
 

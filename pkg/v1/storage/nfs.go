@@ -97,7 +97,7 @@ func (b *NFSBackend) ReadDir(path string) ([]os.DirEntry, error)                
 func (b *NFSBackend) Stat(path string) (os.FileInfo, error)                      { return b.local.Stat(path) }
 func (b *NFSBackend) Walk(root string, fn filepath.WalkFunc) error               { return b.local.Walk(root, fn) }
 func (b *NFSBackend) Rename(oldPath, newPath string) error                       { return b.local.Rename(oldPath, newPath) }
-func (b *NFSBackend) CopyFromNative(nativeSrc, backendDst string) error          { return b.local.CopyFromNative(nativeSrc, backendDst) }
+func (b *NFSBackend) CopyFromNative(nativeSrc, backendDst string, excludePatterns []string) error { return b.local.CopyFromNative(nativeSrc, backendDst, excludePatterns) }
 func (b *NFSBackend) CopyToNative(backendSrc, nativeDst string) error            { return b.local.CopyToNative(backendSrc, nativeDst) }
 func (b *NFSBackend) BasePath() string                                           { return b.local.BasePath() }
 func (b *NFSBackend) IsLocal() bool                                              { return true }
