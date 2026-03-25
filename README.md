@@ -54,6 +54,11 @@ The configuration file is a JSON file with the following structure:
     "node_modules",
     ".tmp",
     "*.tmp"
+  ],
+  "enabled_providers": [
+    "userdata",
+    "flatpak",
+    "abroot"
   ]
 }
 ```
@@ -67,6 +72,7 @@ The following table describes each of the configuration options:
 | `max_parallel_workers` | The maximum number of parallel workers to use during backup and restore operations. |
 | `retention_keep_last` | The number of snapshots to keep. Older snapshots are automatically pruned. If set to `0`, no automatic pruning occurs. |
 | `exclude_patterns` | Glob patterns to exclude from backups. |
+| `enabled_providers` | List of providers to enable. Valid values: `userdata`, `flatpak`, `abroot`. All enabled by default. |
 
 ## How it works
 
@@ -86,6 +92,8 @@ The backup process is composed of multiple providers, each responsible for a spe
 - **UserData** - backs up all user home directories from `/home/*`.
 - **Flatpak** - backs up the list of installed Flatpak applications.
 - **ABRoot** - backs up ABRoot metadata from `/etc/abroot`.
+
+You can selectively enable/disable providers via the `enabled_providers` configuration field. This is useful if you want to exclude large directories (e.g., 500GB `/home` data) or only backup specific components.
 
 Each provider runs independently, and the results are collected into a single snapshot. The snapshot is then stored in the repository with a unique ID and timestamp.
 

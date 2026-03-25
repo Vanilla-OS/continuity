@@ -28,16 +28,25 @@ type Manager struct {
 }
 
 // NewManager creates a new backup manager
-func NewManager(app *app.App, repoMgr *repo.Manager, excludePatterns []string, dryRun bool) *Manager {
+func NewManager(app *app.App, repoMgr *repo.Manager, excludePatterns []string, enabledProviders []string, dryRun bool) *Manager {
+	allProviders := map[string]providers.BackupProvider{
+		"userdata": providers.NewUserDataProvider(excludePatterns),
+		"flatpak":  providers.NewFlatpakProvider(),
+		"abroot":   providers.NewABRootProvider(),
+	}
+
+	var activeProviders []providers.BackupProvider
+	for _, name := range enabledProviders {
+		if provider, ok := allProviders[name]; ok {
+			activeProviders = append(activeProviders, provider)
+		}
+	}
+
 	return &Manager{
-		App:     app,
-		RepoMgr: repoMgr,
-		DryRun:  dryRun,
-		Providers: []providers.BackupProvider{
-			providers.NewUserDataProvider(excludePatterns),
-			providers.NewFlatpakProvider(),
-			providers.NewABRootProvider(),
-		},
+		App:       app,
+		RepoMgr:   repoMgr,
+		DryRun:    dryRun,
+		Providers: activeProviders,
 	}
 }
 

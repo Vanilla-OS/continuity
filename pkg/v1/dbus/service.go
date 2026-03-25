@@ -95,7 +95,7 @@ func (s *Service) CreateBackup(label string) (string, *dbus.Error) {
 		return "", dbus.MakeFailedError(fmt.Errorf("failed to init repo: %w", err))
 	}
 
-	backupMgr := backup.NewManager(s.App, repoMgr, s.Core.Config.ExcludePatterns, false)
+	backupMgr := backup.NewManager(s.App, repoMgr, s.Core.Config.ExcludePatterns, s.Core.Config.EnabledProviders, false)
 	snapshotID, err := backupMgr.RunBackup(label)
 	if err != nil {
 		return "", dbus.MakeFailedError(fmt.Errorf("backup failed: %w", err))
@@ -135,7 +135,7 @@ func (s *Service) RestoreBackup(snapshotID string) (bool, *dbus.Error) {
 		return false, dbus.MakeFailedError(fmt.Errorf("failed to init repo: %w", err))
 	}
 
-	restoreMgr := restore.NewManager(s.App, repoMgr, false)
+	restoreMgr := restore.NewManager(s.App, repoMgr, s.Core.Config.EnabledProviders, false)
 	if err := restoreMgr.RunRestore(snapshotID); err != nil {
 		return false, dbus.MakeFailedError(fmt.Errorf("restore failed: %w", err))
 	}

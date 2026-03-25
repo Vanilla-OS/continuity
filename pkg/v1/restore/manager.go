@@ -27,16 +27,35 @@ type Manager struct {
 }
 
 // NewManager creates a new restore manager
-func NewManager(app *app.App, repoMgr *repo.Manager, dryRun bool) *Manager {
+func NewManager(app *app.App, repoMgr *repo.Manager, enabledProviders []string, dryRun bool) *Manager {
+	allProviders := map[string]providers.BackupProvider{
+		"userdata": providers.NewUserDataProvider(nil),
+		"flatpak":  providers.NewFlatpakProvider(),
+		"abroot":   providers.NewABRootProvider(),
+	}
+
+	activeProviders := make(map[string]providers.BackupProvider)
+	for _, name := range enabledProviders {
+		// Map config names to provider keys
+		providerKey := name
+		if name == "userdata" {
+			providerKey = "UserData"
+		} else if name == "flatpak" {
+			providerKey = "Flatpak"
+		} else if name == "abroot" {
+			providerKey = "ABRoot"
+		}
+
+		if provider, ok := allProviders[name]; ok {
+			activeProviders[providerKey] = provider
+		}
+	}
+
 	return &Manager{
-		App:     app,
-		RepoMgr: repoMgr,
-		DryRun:  dryRun,
-		Providers: map[string]providers.BackupProvider{
-			"UserData": providers.NewUserDataProvider(nil),
-			"Flatpak":  providers.NewFlatpakProvider(),
-			"ABRoot":   providers.NewABRootProvider(),
-		},
+		App:       app,
+		RepoMgr:   repoMgr,
+		DryRun:    dryRun,
+		Providers: activeProviders,
 	}
 }
 

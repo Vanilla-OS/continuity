@@ -79,7 +79,7 @@ func (c *BackupCmd) Run() error {
 		return fmt.Errorf("failed to initialize repository: %w", err)
 	}
 
-	backupMgr := backup.NewManager(globalApp, repoMgr, globalCore.Config.ExcludePatterns, c.DryRun)
+	backupMgr := backup.NewManager(globalApp, repoMgr, globalCore.Config.ExcludePatterns, globalCore.Config.EnabledProviders, c.DryRun)
 	snapshotID, err := backupMgr.RunBackup(c.Label)
 	if err != nil {
 		return fmt.Errorf("backup failed: %w", err)
@@ -105,7 +105,7 @@ func (c *ListCmd) Run() error {
 		return fmt.Errorf("failed to initialize repository: %w", err)
 	}
 
-	backupMgr := backup.NewManager(globalApp, repoMgr, globalCore.Config.ExcludePatterns, false)
+	backupMgr := backup.NewManager(globalApp, repoMgr, globalCore.Config.ExcludePatterns, globalCore.Config.EnabledProviders, false)
 	if err := backupMgr.ListBackups(); err != nil {
 		return fmt.Errorf("failed to list backups: %w", err)
 	}
@@ -127,7 +127,7 @@ func (c *RestoreCmd) Run() error {
 		return fmt.Errorf("failed to initialize repository: %w", err)
 	}
 
-	restoreMgr := restore.NewManager(globalApp, repoMgr, c.DryRun)
+	restoreMgr := restore.NewManager(globalApp, repoMgr, globalCore.Config.EnabledProviders, c.DryRun)
 	if err := restoreMgr.RunRestore(c.SnapshotID); err != nil {
 		return fmt.Errorf("restore failed: %w", err)
 	}

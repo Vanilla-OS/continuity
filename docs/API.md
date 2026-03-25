@@ -137,6 +137,7 @@ type Config struct {
     MaxParallelWorkers int      `json:"max_parallel_workers"`
     RetentionKeepLast  int      `json:"retention_keep_last"`
     ExcludePatterns    []string `json:"exclude_patterns"`
+    EnabledProviders   []string `json:"enabled_providers"`
 }
 ```
 
@@ -154,6 +155,30 @@ type Config struct {
     "node_modules",
     ".tmp",
     "*.tmp"
+  ],
+  "enabled_providers": [
+    "userdata",
+    "flatpak",
+    "abroot"
+  ]
+}
+```
+
+### Provider Configuration
+
+The `enabled_providers` field allows selective enablement of backup providers:
+
+- **userdata**: Backs up `/home/*` directories
+- **flatpak**: Backs up Flatpak application list
+- **abroot**: Backs up ABRoot metadata from `/etc/abroot`
+
+All providers are enabled by default. To exclude a provider (e.g., to skip backing up large `/home` data), remove it from the list:
+
+```json
+{
+  "enabled_providers": [
+    "flatpak",
+    "abroot"
   ]
 }
 ```

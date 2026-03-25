@@ -23,6 +23,7 @@ type Config struct {
 	MaxParallelWorkers int      `json:"max_parallel_workers"`
 	RetentionKeepLast  int      `json:"retention_keep_last"`
 	ExcludePatterns    []string `json:"exclude_patterns"`
+	EnabledProviders   []string `json:"enabled_providers"`
 }
 
 // Default returns a default configuration
@@ -38,6 +39,11 @@ func Default() *Config {
 			"node_modules",
 			".tmp",
 			"*.tmp",
+		},
+		EnabledProviders: []string{
+			"userdata",
+			"flatpak",
+			"abroot",
 		},
 	}
 }
@@ -70,6 +76,13 @@ func Load() (*Config, error) {
 			"node_modules",
 			".tmp",
 			"*.tmp",
+		}
+	}
+	if len(cfg.EnabledProviders) == 0 {
+		cfg.EnabledProviders = []string{
+			"userdata",
+			"flatpak",
+			"abroot",
 		}
 	}
 
