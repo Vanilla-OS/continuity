@@ -8,6 +8,7 @@ Description: Pluggable storage backend interface and factory.
 */
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -56,6 +57,9 @@ func NewBackend(cfg *config.Config) (Backend, error) {
 	if cfg.Remote == nil || cfg.Remote.Type == "" || cfg.Remote.Type == "local" {
 		return NewLocalBackend(cfg), nil
 	}
+	if err := validateRemoteConfig(cfg.Remote); err != nil {
+		return nil, err
+	}
 	switch cfg.Remote.Type {
 	case "sftp":
 		return NewSFTPBackend(cfg), nil
@@ -68,4 +72,28 @@ func NewBackend(cfg *config.Config) (Backend, error) {
 	default:
 		return NewLocalBackend(cfg), nil
 	}
+}
+
+// validateRemoteConfig checks that the remote config is sane before connecting.
+func validateRemoteConfig(r *config.RemoteConfig) error {
+	if r.Host == "" {
+		return fmt.Errorf("remote config: host is required for backend type %q", r.Type)
+	}
+	if r.Path == "" || r.Path == "/" {
+		return fmt.Errorf("remote config: path %q is not valid — set a dedicated directory (e.g. /backups/continuity)", r.Path)
+	}
+	switch r.Type {
+	case "sftp", "ftp":
+		if r.User == "" {
+			return fmt.Errorf("remote config: user is required for %s backend", r.Type)
+		}
+		if r.Password == "" && r.KeyFile == "" {
+			return fmt.Errorf("remote config: either password or key_file is required for %s backend", r.Type)
+		}
+	case "smb":
+		if r.ShareName == "" {
+			return fmt.Errorf("remote config: share_name is required for smb backend")
+		}
+	}
+	return nil
 }
