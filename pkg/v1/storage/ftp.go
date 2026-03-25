@@ -100,21 +100,31 @@ func (r *byteReader) Read(p []byte) (int, error) {
 }
 
 // MkdirAll creates remote directories recursively.
+// It checks existence first via List to avoid misinterpreting
+// "already exists" errors from MakeDir as real failures.
 func (b *FTPBackend) MkdirAll(path string, _ os.FileMode) error {
 	if path == "" || path == "." || path == "/" {
 		return nil
 	}
 
-	// Try to create parent first, ignore errors (may already exist)
-	parent := filepath.Dir(path)
-	if parent != path {
-		_ = b.MkdirAll(parent, 0755)
+	// If the directory already exists, nothing to do.
+	if _, err := b.conn.List(path); err == nil {
+		return nil
 	}
 
-	err := b.conn.MakeDir(path)
-	if err != nil {
-		// Ignore "directory already exists" style errors
-		return nil
+	// Ensure parent exists first.
+	if parent := filepath.Dir(path); parent != path {
+		if err := b.MkdirAll(parent, 0755); err != nil {
+			return err
+		}
+	}
+
+	// Create the directory, tolerating a race where it was just created.
+	if err := b.conn.MakeDir(path); err != nil {
+		if _, listErr := b.conn.List(path); listErr == nil {
+			return nil // already exists, created concurrently
+		}
+		return fmt.Errorf("ftp: MkdirAll %s: %w", path, err)
 	}
 	return nil
 }
