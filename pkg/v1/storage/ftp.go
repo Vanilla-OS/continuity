@@ -19,6 +19,11 @@ import (
 	"github.com/vanilla-os/continuity/pkg/v1/config"
 )
 
+// clearProgress clears the current progress line.
+func clearProgress() {
+	fmt.Fprintf(os.Stderr, "\r\033[K")
+}
+
 // FTPBackend provides backup storage over FTP.
 // All writes go directly to the remote host without local staging.
 type FTPBackend struct {
@@ -259,9 +264,10 @@ func (b *FTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 		return fmt.Errorf("failed to resolve path %s: %w", nativeSrc, err)
 	}
 
-	return filepath.Walk(resolvedSrc, func(localPath string, info os.FileInfo, err error) error {
+	err = filepath.Walk(resolvedSrc, func(localPath string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "\r\033[K  ⚠ skipped %s: %v\n", localPath, err)
+			return nil
 		}
 
 		relPath, err := filepath.Rel(resolvedSrc, localPath)
@@ -279,6 +285,8 @@ func (b *FTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 			return nil
 		}
 
+		fmt.Fprintf(os.Stderr, "\r\033[K  → %s", localPath)
+
 		if err := b.MkdirAll(filepath.Dir(remotePath), 0755); err != nil {
 			return err
 		}
@@ -291,6 +299,8 @@ func (b *FTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 
 		return b.conn.Stor(remotePath, f)
 	})
+	clearProgress()
+	return err
 }
 
 // CopyToNative downloads backendSrc (remote path) to nativeDst (local path).

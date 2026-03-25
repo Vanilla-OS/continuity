@@ -218,9 +218,10 @@ func (b *SFTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 		return fmt.Errorf("failed to resolve path %s: %w", nativeSrc, err)
 	}
 
-	return filepath.Walk(resolvedSrc, func(localPath string, info os.FileInfo, err error) error {
+	err = filepath.Walk(resolvedSrc, func(localPath string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "\r\033[K  ⚠ skipped %s: %v\n", localPath, err)
+			return nil
 		}
 
 		relPath, err := filepath.Rel(resolvedSrc, localPath)
@@ -237,6 +238,8 @@ func (b *SFTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 		if !info.Mode().IsRegular() {
 			return nil
 		}
+
+		fmt.Fprintf(os.Stderr, "\r\033[K  → %s", localPath)
 
 		if err := b.client.MkdirAll(filepath.Dir(remotePath)); err != nil {
 			return err
@@ -257,6 +260,8 @@ func (b *SFTPBackend) CopyFromNative(nativeSrc, backendDst string) error {
 		_, err = io.Copy(dst, src)
 		return err
 	})
+	fmt.Fprintf(os.Stderr, "\r\033[K")
+	return err
 }
 
 // CopyToNative downloads backendSrc (remote path) to nativeDst (local path).
