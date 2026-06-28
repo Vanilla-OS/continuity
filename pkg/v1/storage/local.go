@@ -8,13 +8,27 @@ Description: Local filesystem backend.
 */
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/vanilla-os/continuity/pkg/v1/config"
 )
+
+func preserveMeta(path string, info os.FileInfo) error {
+	if st, ok := info.Sys().(*syscall.Stat_t); ok {
+		if err := os.Lchown(path, int(st.Uid), int(st.Gid)); err != nil && !errors.Is(err, os.ErrPermission) {
+			return err
+		}
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil
+	}
+	return os.Chmod(path, info.Mode())
+}
 
 // LocalBackend wraps the local filesystem via os.* and filepath.*.
 type LocalBackend struct {
@@ -92,7 +106,10 @@ func (b *LocalBackend) CopyFromNative(nativeSrc, backendDst string, excludePatte
 		dstPath := filepath.Join(backendDst, relPath)
 
 		if info.IsDir() {
-			return os.MkdirAll(dstPath, info.Mode())
+			if err := os.MkdirAll(dstPath, info.Mode()); err != nil {
+				return err
+			}
+			return preserveMeta(dstPath, info)
 		}
 
 		if !info.Mode().IsRegular() {
@@ -115,8 +132,10 @@ func (b *LocalBackend) CopyFromNative(nativeSrc, backendDst string, excludePatte
 		}
 		defer dst.Close()
 
-		_, err = io.Copy(dst, src)
-		return err
+		if _, err := io.Copy(dst, src); err != nil {
+			return err
+		}
+		return preserveMeta(dstPath, info)
 	})
 }
 
@@ -133,7 +152,10 @@ func (b *LocalBackend) CopyToNative(backendSrc, nativeDst string) error {
 		dstPath := filepath.Join(nativeDst, relPath)
 
 		if info.IsDir() {
-			return os.MkdirAll(dstPath, info.Mode())
+			if err := os.MkdirAll(dstPath, info.Mode()); err != nil {
+				return err
+			}
+			return preserveMeta(dstPath, info)
 		}
 
 		if !info.Mode().IsRegular() {
@@ -156,8 +178,10 @@ func (b *LocalBackend) CopyToNative(backendSrc, nativeDst string) error {
 		}
 		defer dst.Close()
 
-		_, err = io.Copy(dst, src)
-		return err
+		if _, err := io.Copy(dst, src); err != nil {
+			return err
+		}
+		return preserveMeta(dstPath, info)
 	})
 }
 
