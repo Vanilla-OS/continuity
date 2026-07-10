@@ -4,7 +4,10 @@ go 1.25.0
 
 require (
 	github.com/godbus/dbus/v5 v5.2.2
+	github.com/jlaffaye/ftp v0.2.0
+	github.com/pkg/sftp v1.13.10
 	github.com/vanilla-os/sdk v0.0.0-20260302123445-43c07dcc578b
+	golang.org/x/crypto v0.52.0
 )
 
 require (
@@ -22,7 +25,6 @@ require (
 	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/jkeiser/iter v0.0.0-20200628201005-c8aa0ae784d1 // indirect
-	github.com/jlaffaye/ftp v0.2.0 // indirect
 	github.com/jochenvg/go-udev v0.0.0-20171110120927-d6b62d56d37b // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
@@ -37,15 +39,12 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/phuslu/log v1.0.88 // indirect
-	github.com/pkg/sftp v1.13.10 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/vorlif/spreak v0.6.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/crypto v0.49.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 )
