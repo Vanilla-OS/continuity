@@ -21,6 +21,9 @@ import (
 	"github.com/vanilla-os/sdk/pkg/v1/app/types"
 )
 
+// Version is replaced at build time with the release tag.
+var Version = "1.0.0"
+
 var continuityApp *app.App
 
 func main() {
@@ -28,7 +31,7 @@ func main() {
 	continuityApp, err = app.NewApp(types.AppOptions{
 		RDNN:    "org.vanillaos.Continuity",
 		Name:    "Vanilla Continuity",
-		Version: "1.0.0",
+		Version: Version,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize application: %v\n", err)

@@ -63,7 +63,7 @@ type VersionCmd struct {
 
 // Run executes the version command
 func (c *VersionCmd) Run() error {
-	globalApp.Log.Term.Info().Msg("Vanilla Continuity v1.0.0")
+	globalApp.Log.Term.Info().Msgf("Vanilla Continuity v%s", globalApp.Version)
 	return nil
 }
 
