@@ -66,6 +66,48 @@ gdbus call --system --dest org.vanillaos.Continuity \
   --method org.vanillaos.Continuity.GetStatus
 ```
 
+#### `ListDevices(include_all: boolean) → (devices: array[dict])`
+Lists block devices that can host a Continuity repository.
+
+**Arguments:**
+- `include_all` (boolean): When false, only writable partitions, LUKS containers and whole-disk filesystems are returned. When true, every block node reported by lsblk is included.
+
+**Returns:**
+- `devices` (array of dict<string, variant>): Each entry contains keys: `path`, `type`, `fstype`, `label`, `uuid`, `size`, `model`, `vendor`, `serial`, `transport`, `removable`, `hotplug`, `readonly`, `mountpoint`, `is_luks`, `is_continuity`, and (when the device is a Continuity repository) `repo_label`, `repo_uuid`, `repo_created_at`.
+
+#### `GetDeviceInfo(device_path: string) → (info: dict)`
+Returns the same data as `ListDevices` for a single device.
+
+#### `InitRepository(device_path: string, label: string, encrypt: boolean, fs: string, password: string, activate: boolean) → (mount_path: string)`
+Initializes a device as a Continuity repository, destroying any existing data.
+
+**Arguments:**
+- `device_path` (string): Block device to initialize (e.g. `/dev/sdb1`).
+- `label` (string): Human-readable repository label.
+- `encrypt` (boolean): When true, LUKS2 is set up on the device.
+- `fs` (string): Filesystem to create on top: `ext4` or `btrfs`. Empty string defaults to `ext4`.
+- `password` (string): LUKS2 passphrase. Required when `encrypt` is true; ignored otherwise.
+- `activate` (boolean): When true, the new repository is left mounted and marked as the active runtime repository.
+
+**Returns:**
+- `mount_path` (string): Path under `/run/continuity/<uuid>` where the repository is (or was) mounted.
+
+#### `UnlockRepository(device_path: string, password: string) → (mount_path: string)`
+Unlocks an existing Continuity repository and marks it as active.
+
+**Arguments:**
+- `device_path` (string): Block device hosting a Continuity repository.
+- `password` (string): LUKS2 passphrase. Ignored for plaintext repositories.
+
+**Returns:**
+- `mount_path` (string): Path under `/run/continuity/<uuid>` where the repository is mounted.
+
+#### `LockRepository(device_path: string) → (success: boolean)`
+Unmounts and (for LUKS devices) locks the named repository. Pass an empty string to lock the currently-active repository.
+
+#### `GetActiveRepository() → (info: dict)`
+Returns information about the currently-active runtime repository, or an empty dict when none is set. Keys: `device_path`, `mount_path`, `repo_path`, `luks`, `label`, `uuid`, `opened_at`.
+
 ## CLI Interface
 
 ### Commands
@@ -149,6 +191,37 @@ Show Continuity status.
 ```bash
 continuity status
 ```
+
+### `continuity device`
+
+Manage block devices used as Continuity repositories.
+
+#### `continuity device list [--all]`
+List candidate block devices. With `--all`, includes internal, read-only and bare disks.
+
+#### `continuity device init <device> [flags]`
+Initialize a device as a Continuity repository. **Destroys all data on the device.**
+
+**Flags:**
+- `--label <string>`: Human-readable repository label.
+- `--fs ext4|btrfs`: Filesystem to create (default `ext4`).
+- `--no-encrypt`: Skip LUKS2 encryption (not recommended).
+- `--password <string>`: Repository passphrase; prompts on the terminal when omitted.
+- `--force`: Skip the destructive-operation confirmation.
+- `--no-activate`: Lock the repository again after creation instead of leaving it mounted as active.
+
+#### `continuity device unlock <device> [--password <string>]`
+Unlock a repository and mark it as active. Prompts for the passphrase when `--password` is omitted on a LUKS device.
+
+#### `continuity device lock [<device>]`
+Lock and unmount a repository. Defaults to the active repository when no device is given.
+
+#### `continuity device info <device>`
+Show all available metadata for a device, including Continuity repository information when present.
+
+### Active runtime repository
+
+Once `device init` (without `--no-activate`) or `device unlock` completes, Continuity writes the active repository pointer to `/run/continuity/active.json`. Subsequent `backup`, `restore`, `list` and `prune` invocations (CLI and DBus) operate against that repository instead of `repository_path` from the config file. `device lock` clears the active pointer.
 
 ## Configuration API
 

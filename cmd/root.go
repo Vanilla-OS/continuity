@@ -32,6 +32,7 @@ type RootCmd struct {
 	Inspect InspectCmd `cmd:"inspect" help:"Inspect a backup snapshot"`
 	Restore RestoreCmd `cmd:"restore" help:"Restore from a backup"`
 	Prune   PruneCmd   `cmd:"prune" help:"Prune old backups"`
+	Device  DeviceCmd  `cmd:"device" help:"Manage block devices used as Continuity repositories"`
 	Daemon  DaemonCmd  `cmd:"daemon" help:"Start DBus daemon"`
 }
 
@@ -45,7 +46,7 @@ func NewRootCmd(application *app.App, core *continuity.Core) *RootCmd {
 // newBackend creates, connects and returns the configured storage backend.
 // The caller is responsible for calling backend.Close().
 func newBackend() (storage.Backend, error) {
-	backend, err := storage.NewBackend(globalCore.Config)
+	backend, err := storage.NewBackend(globalCore.EffectiveConfig())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage backend: %w", err)
 	}

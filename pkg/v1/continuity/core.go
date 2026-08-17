@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/vanilla-os/continuity/pkg/v1/config"
+	"github.com/vanilla-os/continuity/pkg/v1/runtime"
 	"github.com/vanilla-os/sdk/pkg/v1/app"
 )
 
@@ -31,4 +32,17 @@ func NewCore(app *app.App) (*Core, error) {
 		App:    app,
 		Config: cfg,
 	}, nil
+}
+
+// EffectiveConfig returns a Config with RepositoryPath overridden by the
+// currently-active runtime repository, when one is set. The returned value
+// is a shallow copy: the caller must not mutate slice fields.
+func (c *Core) EffectiveConfig() *config.Config {
+	cfg := *c.Config
+	if active, err := runtime.GetActive(); err == nil && active != nil && active.RepoPath != "" {
+		cfg.RepositoryPath = active.RepoPath
+		// An active runtime repo is always local on this host.
+		cfg.Remote = nil
+	}
+	return &cfg
 }
