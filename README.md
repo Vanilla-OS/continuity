@@ -1,6 +1,6 @@
 <div align="center">
   <h1 align="center">Vanilla Continuity</h1>
-  <p align="center">Vanilla Continuity provides snapshot-based backup and restore for Vanilla OS systems, with full integration with ABRoot for atomic system recovery.</p>
+  <p align="center">Vanilla Continuity provides snapshot-based backup and restore for Vanilla OS systems, including user data, Flatpak applications, and ABRoot metadata.</p>
 </div>
 
 ## Help output
@@ -14,8 +14,11 @@ Usage:
 Available Commands:
   backup          Create a new backup
   daemon          Start DBus daemon
+  device          Manage block devices used as Continuity repositories
   help            Help about any command
+  inspect         Inspect a backup snapshot
   list            List all backups
+  man             Generate man page
   prune           Prune old backups
   restore         Restore from a backup
   status          Show Continuity status
@@ -30,9 +33,11 @@ Use "continuity [command] --help" for more information about a command.
 
 ## Installation
 
-Vanilla Continuity is a single binary, which can be placed anywhere on the system. It
-requires administrative privileges to run and a configuration file to be
-present in one of the following locations, ordered by priority:
+Vanilla Continuity is a single binary, which can be placed anywhere on the
+system. Backup operations require administrative privileges. Configuration is
+optional: built-in defaults are used when no configuration file is found. A
+configuration file can be placed in one of these locations, ordered by
+priority:
 
 - `~/.config/continuity/config.json` -> for user configuration
 - `./conf/continuity/config.json` -> for development purposes only
@@ -76,14 +81,14 @@ The following table describes each of the configuration options:
 
 ## How it works
 
-Vanilla Continuity works by creating snapshots of the system's user data, applications, and ABRoot metadata. Each snapshot is atomic and can be restored independently.
+Vanilla Continuity creates snapshots of the system's user data, applications,
+and ABRoot metadata. Each snapshot can be restored independently.
 
 ### Terminology
 
 - **snapshot** - a snapshot is a point-in-time copy of the system's data, stored in the repository.
 - **repository** - the repository is the location where all snapshots are stored. It can be a local directory or an encrypted USB device.
 - **provider** - a provider is responsible for backing up and restoring a specific type of data (e.g., user data, Flatpak apps, ABRoot metadata).
-- **atomic** - a backup or restore operation is atomic if it is either fully applied or not applied at all. There is no in-between state.
 
 ### Backup process
 
@@ -105,7 +110,9 @@ The restore process reads a snapshot from the repository and applies it to the s
 - **Flatpak** - reinstalls Flatpak applications from the backup list.
 - **ABRoot** - restores ABRoot metadata to `/etc/abroot` and triggers `abroot pkg sync`.
 
-The restore process is atomic. If any provider fails, the system is not left in an inconsistent state.
+Providers are restored independently. Continuity reports provider failures and
+continues with the remaining providers, so inspect the command output before
+rebooting or relying on the restored state.
 
 ### Retention pruning
 
@@ -151,28 +158,57 @@ The `inspect` command shows:
   - **ABRoot**: Files backed up from /etc/abroot
   - **UserData**: User home directories with sizes
 
-### LUKS encryption
+### External devices
 
-Continuity supports LUKS2 encryption for backup repositories. This is useful when storing backups on USB devices:
+Continuity can format an external block device as an ext4 or Btrfs repository.
+LUKS2 encryption is enabled by default.
 
-```go
-import "github.com/vanilla-os/continuity/pkg/v1/crypto"
-
-repo, err := crypto.CreateLUKSRepository("/dev/sdb1", "/mnt/backup", "password")
-if err != nil {
-    log.Fatal(err)
-}
-defer repo.Close()
+```bash
+continuity device list
+continuity device init /dev/sdb1 --label reunion-backups
+continuity device unlock /dev/sdb1
+continuity device info /dev/sdb1
+continuity device lock /dev/sdb1
 ```
+
+`device init` destroys existing data on the selected device. Check the device
+path before confirming the operation.
+
+### Remote repositories
+
+Set the optional `remote` configuration object to store backups over SFTP,
+FTP, SMB, or NFS. For example:
+
+```json
+{
+  "remote": {
+    "type": "sftp",
+    "host": "backup.example.com",
+    "port": 22,
+    "user": "backup",
+    "key_file": "/root/.ssh/continuity",
+    "path": "/srv/backups/continuity"
+  }
+}
+```
+
+Use a protected configuration file and prefer an SFTP key over a stored
+password. SMB requires `cifs-utils` on the host.
 
 ### DBus service
 
 Continuity provides a DBus service for system integration. The service is available at `org.vanillaos.Continuity` and provides the following methods:
 
-- `CreateBackup(label: string) → (snapshot_id: string)`
-- `ListBackups() → (snapshot_ids: array[string])`
-- `RestoreBackup(snapshot_id: string) → (success: boolean)`
-- `GetStatus() → (status: string)`
+- `CreateBackup(label: string) -> (snapshot_id: string)`
+- `ListBackups() -> (snapshot_ids: array[string])`
+- `RestoreBackup(snapshot_id: string) -> (success: boolean)`
+- `GetStatus() -> (status: string)`
+- `ListDevices(include_all: boolean) -> (devices: array[dict])`
+- `GetDeviceInfo(device_path: string) -> (info: dict)`
+- `InitRepository(device_path, label, encrypt, fs, password, activate) -> (mount_path: string)`
+- `UnlockRepository(device_path, password) -> (mount_path: string)`
+- `LockRepository(device_path: string) -> (success: boolean)`
+- `GetActiveRepository() -> (info: dict)`
 
 To start the DBus daemon:
 
